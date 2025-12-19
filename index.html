@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>복한아름 위키 스프레드시트 (동기화)</title>
 
-  <!-- Jspreadsheet (엑셀 UI) -->
-  <link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.css" />
+  <!-- ✅ jsuites 먼저, 그 다음 jspreadsheet (순서 중요) -->
   <link rel="stylesheet" href="https://jsuites.net/v5/jsuites.css" />
+  <link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.css" />
 
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -35,7 +35,7 @@
       margin-top: 10px; font-size: 12px; color: #666; line-height: 1.5;
       border-top: 1px solid #eee; padding-top: 10px;
     }
-    #sheet { width: 100%; }
+    #sheet { width: 100%; min-height: 420px; }
     code { background:#f3f3f3; padding:2px 6px; border-radius: 6px; }
   </style>
 </head>
@@ -60,30 +60,27 @@
     <div id="sheet"></div>
 
     <div class="hint">
-      ✅ 실행 주소가 <code>file:///C:/...</code>면 로그인 팝업이 막힐 수 있어요.<br/>
-      ✅ 반드시 <code>http://localhost:5500/wiki.html</code> 같이 “로컬 서버”로 여세요.<br/><br/>
-      로컬 서버 여는 법(윈도우 PowerShell):
-      <br/>1) <code>wiki.html</code> 있는 폴더에서 PowerShell 열기
-      <br/>2) <code>python -m http.server 5500</code>
-      <br/>3) 크롬에서 <code>http://localhost:5500/wiki.html</code> 접속
-      <br/><br/>
-      ※ 이 버전은 “나 혼자 쓰는 동기화” 기준으로 간단하게 만들었고, 동시에 여러 기기에서 막 수정하면 마지막 저장이 이깁니다.
+      ✅ 이 페이지는 <b>GitHub Pages(HTTPS)</b>에서 실행될 때 Google 로그인/동기화가 정상 동작합니다.<br/>
+      ✅ 셀에 값을 입력하면 자동 저장되고(약 0.6초 후), 새로고침해도 값이 남으면 동기화 성공입니다.<br/>
+      ✅ 여러 기기에서 동시에 수정하면 “마지막 저장”이 반영됩니다(간단 동기화 방식).<br/>
     </div>
   </div>
 
-  <script src="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.js"></script>
+  <!-- ✅ jsuites 먼저, 그 다음 jspreadsheet (순서 중요) -->
   <script src="https://jsuites.net/v5/jsuites.js"></script>
+  <script src="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.js"></script>
 
   <!-- Firebase + 동기화 로직 -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-      from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, onSnapshot, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-    // ✅ 너 프로젝트 설정 (그대로 사용)
+    // ✅ 네 프로젝트 설정
     const firebaseConfig = {
       apiKey: "AIzaSyDkJHN4clTEkuutxJdHNK4O7g3AnyP2PqU",
       authDomain: "bokhanareumwiki.firebaseapp.com",
@@ -106,6 +103,7 @@
     const btnSave = $("btnSave");
     const whoEl = $("who");
     const statusEl = $("status");
+    const sheetHost = $("sheet");
 
     function setStatus(msg) { statusEl.textContent = msg; }
 
@@ -117,8 +115,17 @@
     }
 
     function initSheet(data) {
+      // 라이브러리 로딩 체크
+      if (typeof window.jspreadsheet !== "function") {
+        setStatus("표 라이브러리 로딩 실패(F12 Console 확인)");
+        console.error("jspreadsheet not loaded");
+        return;
+      }
+
+      // 기존 시트 제거
       if (sheet) sheet.destroy();
-      sheet = jspreadsheet(document.getElementById("sheet"), {
+
+      sheet = window.jspreadsheet(sheetHost, {
         data,
         minDimensions: [10, 20], // [cols, rows]
         columnDrag: true,
@@ -127,8 +134,6 @@
         allowInsertColumn: true,
         allowDeleteRow: true,
         allowDeleteColumn: true,
-
-        // 셀 변경 감지
         onchange: () => {
           if (isApplyingRemote) return;
           scheduleSave();
@@ -144,7 +149,6 @@
     let saveTimer = null;
 
     function sheetDocRef() {
-      // 사용자별 기본 시트 1개
       return doc(db, "users", uid, "sheets", "default");
     }
 
@@ -153,7 +157,7 @@
       btnSave.disabled = false;
 
       if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveNow, 600); // 디바운스
+      saveTimer = setTimeout(saveNow, 600);
     }
 
     async function saveNow() {
@@ -177,7 +181,7 @@
         btnSave.disabled = true;
       } catch (e) {
         console.error(e);
-        setStatus("저장 실패(콘솔 F12 확인)");
+        setStatus("저장 실패(F12 Console 확인)");
       }
     }
 
@@ -186,7 +190,6 @@
       const snap = await getDoc(ref);
 
       if (!snap.exists()) {
-        // 최초 생성
         const version = Date.now();
         lastVersion = version;
 
@@ -234,8 +237,8 @@
 
     async function resetSheet() {
       if (!uid) return;
-      const ref = sheetDocRef();
 
+      const ref = sheetDocRef();
       const version = Date.now();
       lastVersion = version;
 
@@ -247,11 +250,10 @@
           updatedBy: uid,
           data: blankData()
         }, { merge: true });
-
         setStatus("초기화 완료");
       } catch (e) {
         console.error(e);
-        setStatus("초기화 실패(콘솔 F12 확인)");
+        setStatus("초기화 실패(F12 Console 확인)");
       }
     }
 
@@ -262,23 +264,15 @@
         await signInWithPopup(auth, provider);
       } catch (e) {
         console.error(e);
-        // 대표 에러 안내
-        if (String(e?.code || "").includes("unauthorized-domain")) {
-          setStatus("도메인 미승인(콘솔에서 localhost 승인 필요)");
-        } else if (String(e?.code || "").includes("popup-blocked")) {
-          setStatus("팝업 차단됨(팝업 허용 필요)");
-        } else {
-          setStatus("로그인 실패(콘솔 F12 확인)");
-        }
+        const code = String(e?.code || "");
+        if (code.includes("unauthorized-domain")) setStatus("도메인 미승인(승인된 도메인에 github.io 추가 필요)");
+        else if (code.includes("popup-blocked")) setStatus("팝업 차단됨(팝업 허용 필요)");
+        else setStatus("로그인 실패(F12 Console 확인)");
       }
     };
 
     btnLogout.onclick = async () => {
-      try {
-        await signOut(auth);
-      } catch (e) {
-        console.error(e);
-      }
+      try { await signOut(auth); } catch (e) { console.error(e); }
     };
 
     btnNew.onclick = async () => {
@@ -292,7 +286,6 @@
 
     // ---- 로그인 상태 변화 ----
     onAuthStateChanged(auth, async (user) => {
-      // 구독 정리
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 
       if (!user) {
@@ -309,8 +302,8 @@
       }
 
       uid = user.uid;
-
       whoEl.textContent = `로그인됨: ${user.email || user.displayName || uid}`;
+
       btnLogin.disabled = true;
       btnLogout.disabled = false;
       btnNew.disabled = false;
@@ -324,7 +317,7 @@
       startRealtime();
     });
 
-    // 시작 시: 빈 시트
+    // 시작 시: 빈 시트 표시
     initSheet(blankData());
     setStatus("로그인하면 동기화 시작");
   </script>
