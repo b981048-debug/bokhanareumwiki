@@ -3,39 +3,80 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>복한아름 위키 스프레드시트 (동기화)</title>
-
-  <!-- ✅ jsuites 먼저, 그 다음 jspreadsheet (순서 중요) -->
-  <link rel="stylesheet" href="https://jsuites.net/v5/jsuites.css" />
-  <link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.css" />
-
+  <title>복한아름 버튼 트리 (동기화)</title>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    body { margin: 0; background: #f5f5f5; }
-    .wrap {
-      max-width: 1200px; margin: 16px auto; background: #fff;
-      border-radius: 14px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    body { margin:0; background:#f5f5f5; padding: 12px; }
+    .wrap{
+      max-width: 980px; margin: 0 auto; background:#fff; border-radius: 14px;
+      padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
     }
-    .top {
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      flex-wrap:wrap; margin-bottom: 10px;
+    .top{
+      display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+      margin-bottom: 10px;
     }
-    .left, .right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    button {
+    .left, .right{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    button{
       border:1px solid #ddd; background:#fff; padding:8px 10px; border-radius: 10px;
       cursor:pointer;
     }
-    button:hover { background:#fafafa; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    .badge {
-      font-size:12px; padding:6px 10px; border:1px solid #eee; border-radius:999px;
-      background:#fafafa;
+    button:hover{ background:#fafafa; }
+    button:disabled{ opacity:.5; cursor:not-allowed; }
+    .badge{
+      font-size:12px; padding:6px 10px; border:1px solid #eee; border-radius:999px; background:#fafafa;
     }
-    .hint {
+
+    .panel{
+      border:1px solid #eee; border-radius: 12px; padding: 10px; background:#fff;
+    }
+    .head{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      margin-bottom: 8px;
+    }
+    .head small{ opacity:.75; }
+    .spacer{ flex: 1; }
+
+    .buttons-area{
+      margin-top: 8px;
+      max-height: 60vh;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      border-radius: 12px;
+      padding: 8px;
+      background: #fff;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    .btn-row{
+      display:flex; gap:6px; align-items:center;
+      margin-bottom: 6px;
+    }
+    .btn-main{
+      flex:1;
+      text-align:left;
+      padding:10px;
+      border-radius: 10px;
+      border:1px solid #ccc;
+      background:#fafafa;
+      min-height: 40px;
+      font-size: 14px;
+    }
+    .btn-controls{
+      display:flex; gap:4px; flex-wrap:wrap;
+    }
+    .btn-controls button{
+      padding:6px 8px; font-size: 12px; border-radius: 9px;
+    }
+
+    .hint{
       margin-top: 10px; font-size: 12px; color: #666; line-height: 1.5;
       border-top: 1px solid #eee; padding-top: 10px;
     }
-    #sheet { width: 100%; min-height: 420px; }
+    .empty{
+      font-size: 12px; opacity:.75; padding: 8px;
+      border:1px dashed #ddd; border-radius: 10px; background:#fbfbfb;
+    }
     code { background:#f3f3f3; padding:2px 6px; border-radius: 6px; }
   </style>
 </head>
@@ -46,31 +87,33 @@
       <div class="left">
         <button id="btnLogin">Google 로그인</button>
         <button id="btnLogout" disabled>로그아웃</button>
-
         <span class="badge" id="who">로그인 필요</span>
         <span class="badge" id="status">대기 중…</span>
       </div>
-
       <div class="right">
-        <button id="btnNew" disabled>새 시트(초기화)</button>
-        <button id="btnSave" disabled>지금 저장</button>
+        <button id="btnNewRoot" disabled>ROOT 초기화</button>
       </div>
     </div>
 
-    <div id="sheet"></div>
+    <div class="panel">
+      <div class="head">
+        <button id="btnUp">◀ 상위로</button>
+        <button id="btnRoot">⬆ 최상위</button>
+        <small id="breadcrumb">위치: ROOT</small>
+        <span class="spacer"></span>
+        <button id="btnAddHere" disabled>+ 이 위치에 새 버튼</button>
+      </div>
 
-    <div class="hint">
-      ✅ 이 페이지는 <b>GitHub Pages(HTTPS)</b>에서 실행될 때 Google 로그인/동기화가 정상 동작합니다.<br/>
-      ✅ 셀에 값을 입력하면 자동 저장되고(약 0.6초 후), 새로고침해도 값이 남으면 동기화 성공입니다.<br/>
-      ✅ 여러 기기에서 동시에 수정하면 “마지막 저장”이 반영됩니다(간단 동기화 방식).<br/>
+      <div class="buttons-area" id="buttonContainer"></div>
+
+      <div class="hint">
+        ✅ 버튼을 누르면: <b>하위 버튼이 있으면</b> 그 안으로 이동 / <b>없으면</b> 아무 동작 없이 유지(원하면 나중에 “기록” 기능 추가 가능)<br/>
+        ✅ 버튼 기능: 추가 / 하위추가 / 위·아래 이동 / 이름변경 / 삭제<br/>
+        ✅ 동기화 문서 위치: <code>users/{uid}/buttonTree/default</code>
+      </div>
     </div>
   </div>
 
-  <!-- ✅ jsuites 먼저, 그 다음 jspreadsheet (순서 중요) -->
-  <script src="https://jsuites.net/v5/jsuites.js"></script>
-  <script src="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.js"></script>
-
-  <!-- Firebase + 동기화 로직 -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
     import {
@@ -80,7 +123,7 @@
       getFirestore, doc, setDoc, getDoc, onSnapshot, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-    // ✅ 네 프로젝트 설정
+    // ✅ 네 프로젝트 설정(기존 bokhanareumwiki 그대로)
     const firebaseConfig = {
       apiKey: "AIzaSyDkJHN4clTEkuutxJdHNK4O7g3AnyP2PqU",
       authDomain: "bokhanareumwiki.firebaseapp.com",
@@ -99,227 +142,369 @@
     const $ = (id) => document.getElementById(id);
     const btnLogin = $("btnLogin");
     const btnLogout = $("btnLogout");
-    const btnNew = $("btnNew");
-    const btnSave = $("btnSave");
+    const btnNewRoot = $("btnNewRoot");
+    const btnAddHere = $("btnAddHere");
+    const btnUp = $("btnUp");
+    const btnRoot = $("btnRoot");
     const whoEl = $("who");
     const statusEl = $("status");
-    const sheetHost = $("sheet");
+    const bcEl = $("breadcrumb");
+    const container = $("buttonContainer");
 
-    function setStatus(msg) { statusEl.textContent = msg; }
+    function setStatus(msg){ statusEl.textContent = msg; }
 
-    // ---- 스프레드시트 ----
-    let sheet = null;
+    // ---- 로컬 저장(로그인 전/오프라인 대비) ----
+    const LS_KEY = "bok_buttonTree_v1";
 
-    function blankData(rows = 20, cols = 10) {
-      return Array.from({ length: rows }, () => Array.from({ length: cols }, () => ""));
-    }
-
-    function initSheet(data) {
-      // 라이브러리 로딩 체크
-      if (typeof window.jspreadsheet !== "function") {
-        setStatus("표 라이브러리 로딩 실패(F12 Console 확인)");
-        console.error("jspreadsheet not loaded");
-        return;
-      }
-
-      // 기존 시트 제거
-      if (sheet) sheet.destroy();
-
-      sheet = window.jspreadsheet(sheetHost, {
-        data,
-        minDimensions: [10, 20], // [cols, rows]
-        columnDrag: true,
-        rowDrag: true,
-        allowInsertRow: true,
-        allowInsertColumn: true,
-        allowDeleteRow: true,
-        allowDeleteColumn: true,
-        onchange: () => {
-          if (isApplyingRemote) return;
-          scheduleSave();
-        }
-      });
-    }
-
-    // ---- Firestore 동기화 ----
+    // ---- 트리 모델 ----
+    let tree = null;              // {id,label,children:[...]}
+    let currentParentId = "root"; // 현재 위치
     let uid = null;
+
+    // 동기화 제어
     let unsubscribe = null;
     let isApplyingRemote = false;
     let lastVersion = 0;
     let saveTimer = null;
 
-    function sheetDocRef() {
-      return doc(db, "users", uid, "sheets", "default");
+    function genId(){
+      return "id_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,8);
+    }
+    function blankTree(){
+      return { id:"root", label:"ROOT", children:[] };
     }
 
-    function scheduleSave() {
-      setStatus("로컬 변경 감지… 저장 대기");
-      btnSave.disabled = false;
-
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveNow, 600);
+    function loadLocal(){
+      try{
+        const s = localStorage.getItem(LS_KEY);
+        if(!s) return (tree = blankTree());
+        const parsed = JSON.parse(s);
+        if(parsed && parsed.id && Array.isArray(parsed.children)) tree = parsed;
+        else tree = blankTree();
+      }catch{
+        tree = blankTree();
+      }
+    }
+    function saveLocal(){
+      try{ localStorage.setItem(LS_KEY, JSON.stringify(tree)); }catch{}
     }
 
-    async function saveNow() {
-      if (!uid || !sheet) return;
+    function findNodeById(node, id){
+      if(!node) return null;
+      if(node.id === id) return node;
+      const ch = node.children || [];
+      for(const c of ch){
+        const found = findNodeById(c, id);
+        if(found) return found;
+      }
+      return null;
+    }
+    function findParentId(root, targetId, parentId=null){
+      if(root.id === targetId) return parentId;
+      const ch = root.children || [];
+      for(const c of ch){
+        const found = findParentId(c, targetId, root.id);
+        if(found !== null && found !== undefined) return found;
+      }
+      return null;
+    }
+    function getCurrentParentNode(){
+      const node = findNodeById(tree, currentParentId);
+      if(!node){ currentParentId = "root"; return tree; }
+      return node;
+    }
 
+    function sheetDocRef(){
+      // ✅ 버튼 트리 전용 문서
+      return doc(db, "users", uid, "buttonTree", "default");
+    }
+
+    function scheduleSave(){
+      if(!uid) { saveLocal(); return; }
+      if(isApplyingRemote) return;
+
+      setStatus("저장 대기…");
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNow, 300);
+    }
+
+    async function saveNow(){
+      if(!uid) return;
       const ref = sheetDocRef();
       const version = Date.now();
       lastVersion = Math.max(lastVersion, version);
 
-      const payload = {
-        version,
-        updatedAt: serverTimestamp(),
-        updatedBy: uid,
-        data: sheet.getData()
-      };
+      saveLocal();
 
-      try {
+      try{
         setStatus("저장 중…");
-        await setDoc(ref, payload, { merge: true });
+        await setDoc(ref, {
+          version,
+          updatedAt: serverTimestamp(),
+          updatedBy: uid,
+          tree
+        }, { merge:true });
         setStatus("저장 완료");
-        btnSave.disabled = true;
-      } catch (e) {
+      }catch(e){
         console.error(e);
         setStatus("저장 실패(F12 Console 확인)");
       }
     }
 
-    async function ensureDocExists() {
+    async function ensureDocExists(){
       const ref = sheetDocRef();
       const snap = await getDoc(ref);
 
-      if (!snap.exists()) {
+      if(!snap.exists()){
         const version = Date.now();
         lastVersion = version;
-
         await setDoc(ref, {
           version,
           updatedAt: serverTimestamp(),
           updatedBy: uid,
-          data: blankData()
-        }, { merge: true });
-
-        return blankData();
+          tree
+        }, { merge:true });
+        return tree;
       }
 
-      const data = snap.data()?.data;
-      lastVersion = snap.data()?.version || 0;
-      return Array.isArray(data) ? data : blankData();
+      const remote = snap.data();
+      lastVersion = remote?.version || 0;
+      const remoteTree = remote?.tree;
+      return (remoteTree && remoteTree.id && Array.isArray(remoteTree.children)) ? remoteTree : tree;
     }
 
-    function startRealtime() {
+    function startRealtime(){
       const ref = sheetDocRef();
+      unsubscribe = onSnapshot(ref, (snap)=>{
+        if(!snap.exists()) return;
+        const remote = snap.data() || {};
+        const remoteVersion = remote.version || 0;
 
-      unsubscribe = onSnapshot(ref, (snap) => {
-        if (!snap.exists()) return;
-
-        const remote = snap.data();
-        const remoteVersion = remote?.version || 0;
-        const remoteData = remote?.data;
-
-        if (remoteVersion > lastVersion && Array.isArray(remoteData)) {
+        if(remoteVersion > lastVersion && remote.tree && remote.tree.id && Array.isArray(remote.tree.children)){
           lastVersion = remoteVersion;
           isApplyingRemote = true;
-          try {
+          try{
             setStatus("원격 변경 적용 중…");
-            initSheet(remoteData);
+            tree = remote.tree;
+            saveLocal();
+            // 현재 위치가 사라졌으면 root로
+            if(currentParentId !== "root" && !findNodeById(tree, currentParentId)) currentParentId = "root";
+            render();
             setStatus("동기화 완료");
-            btnSave.disabled = true;
           } finally {
             isApplyingRemote = false;
           }
         } else {
           setStatus("최신 상태");
         }
+      }, (err)=>{
+        console.warn(err);
+        setStatus("실시간 동기화 오류(F12 Console 확인)");
       });
     }
 
-    async function resetSheet() {
-      if (!uid) return;
+    // ---- UI 렌더 ----
+    function updateBreadcrumb(){
+      if(currentParentId === "root"){ bcEl.textContent = "위치: ROOT"; return; }
 
-      const ref = sheetDocRef();
-      const version = Date.now();
-      lastVersion = version;
-
-      try {
-        setStatus("초기화 저장 중…");
-        await setDoc(ref, {
-          version,
-          updatedAt: serverTimestamp(),
-          updatedBy: uid,
-          data: blankData()
-        }, { merge: true });
-        setStatus("초기화 완료");
-      } catch (e) {
-        console.error(e);
-        setStatus("초기화 실패(F12 Console 확인)");
+      const path = [];
+      function dfs(node, targetId){
+        path.push(node);
+        if(node.id === targetId) return true;
+        for(const c of (node.children||[])){
+          if(dfs(c, targetId)) return true;
+        }
+        path.pop();
+        return false;
       }
+      dfs(tree, currentParentId);
+      bcEl.textContent = "위치: " + path.map(n=>n.label).join(" > ");
     }
 
-    // ---- UI 이벤트 ----
-    btnLogin.onclick = async () => {
-      try {
-        setStatus("로그인 시도…");
-        await signInWithPopup(auth, provider);
-      } catch (e) {
-        console.error(e);
-        const code = String(e?.code || "");
-        if (code.includes("unauthorized-domain")) setStatus("도메인 미승인(승인된 도메인에 github.io 추가 필요)");
-        else if (code.includes("popup-blocked")) setStatus("팝업 차단됨(팝업 허용 필요)");
-        else setStatus("로그인 실패(F12 Console 확인)");
+    function moveSibling(parentNode, index, delta){
+      const arr = parentNode.children || [];
+      const ni = index + delta;
+      if(ni < 0 || ni >= arr.length) return;
+      const tmp = arr[index];
+      arr[index] = arr[ni];
+      arr[ni] = tmp;
+      scheduleSave();
+      render();
+    }
+
+    function renderButtons(){
+      container.innerHTML = "";
+
+      const parent = getCurrentParentNode();
+      const children = parent.children || [];
+
+      if(children.length === 0){
+        const div = document.createElement("div");
+        div.className = "empty";
+        div.textContent = "이 위치에는 버튼이 없습니다. 위의 “+ 이 위치에 새 버튼”으로 추가하세요.";
+        container.appendChild(div);
+        return;
       }
-    };
 
-    btnLogout.onclick = async () => {
-      try { await signOut(auth); } catch (e) { console.error(e); }
-    };
+      children.forEach((child, index)=>{
+        const row = document.createElement("div");
+        row.className = "btn-row";
 
-    btnNew.onclick = async () => {
-      if (!confirm("정말 새 시트로 초기화할까요? (동기화된 데이터도 초기화됩니다)")) return;
-      await resetSheet();
-    };
+        const main = document.createElement("button");
+        main.className = "btn-main";
+        main.textContent = child.label;
 
-    btnSave.onclick = async () => {
+        main.onclick = ()=>{
+          if(child.children && child.children.length > 0){
+            currentParentId = child.id;
+            render();
+          } else {
+            // leaf 버튼 클릭 시 동작(원하면 나중에 “기록”으로 바꿔줄 수 있음)
+            setStatus("하위 없음(리프 버튼)");
+          }
+        };
+
+        const ctr = document.createElement("div");
+        ctr.className = "btn-controls";
+
+        const up = document.createElement("button");
+        up.textContent = "↑";
+        up.title = "위로";
+        up.onclick = ()=> moveSibling(parent, index, -1);
+
+        const down = document.createElement("button");
+        down.textContent = "↓";
+        down.title = "아래로";
+        down.onclick = ()=> moveSibling(parent, index, 1);
+
+        const addChild = document.createElement("button");
+        addChild.textContent = "+하위";
+        addChild.title = "하위 버튼 추가";
+        addChild.onclick = ()=>{
+          const name = prompt("하위 버튼 이름:");
+          if(!name || !name.trim()) return;
+          child.children = child.children || [];
+          child.children.push({ id: genId(), label: name.trim(), children: [] });
+          scheduleSave();
+          render();
+        };
+
+        const rename = document.createElement("button");
+        rename.textContent = "이름";
+        rename.title = "이름 변경";
+        rename.onclick = ()=>{
+          const name = prompt("새 이름:", child.label);
+          if(!name || !name.trim()) return;
+          child.label = name.trim();
+          scheduleSave();
+          render();
+        };
+
+        const del = document.createElement("button");
+        del.textContent = "삭제";
+        del.title = "삭제";
+        del.onclick = ()=>{
+          if(!confirm(`'${child.label}' 삭제할까요? (하위도 함께 삭제)`)) return;
+          parent.children.splice(index, 1);
+          scheduleSave();
+          render();
+        };
+
+        ctr.append(up, down, addChild, rename, del);
+        row.append(main, ctr);
+        container.appendChild(row);
+      });
+    }
+
+    function render(){
+      updateBreadcrumb();
+      renderButtons();
+      btnAddHere.disabled = !uid;   // 로그인해야 “동기화 기반”으로 추가 가능 (원하면 로그인 없이도 가능하게 바꿔줌)
+      btnNewRoot.disabled = !uid;
+    }
+
+    // ---- 이벤트 ----
+    btnUp.onclick = ()=>{
+      if(currentParentId === "root") return;
+      currentParentId = findParentId(tree, currentParentId, null) || "root";
+      render();
+    };
+    btnRoot.onclick = ()=>{
+      currentParentId = "root";
+      render();
+    };
+    btnAddHere.onclick = ()=>{
+      const parent = getCurrentParentNode();
+      const name = prompt("새 버튼 이름:");
+      if(!name || !name.trim()) return;
+      parent.children = parent.children || [];
+      parent.children.push({ id: genId(), label: name.trim(), children: [] });
+      scheduleSave();
+      render();
+    };
+    btnNewRoot.onclick = async ()=>{
+      if(!confirm("정말 ROOT를 초기화할까요? (클라우드 데이터도 초기화)")) return;
+      tree = blankTree();
+      currentParentId = "root";
+      saveLocal();
+      render();
       await saveNow();
     };
 
-    // ---- 로그인 상태 변화 ----
-    onAuthStateChanged(auth, async (user) => {
-      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    btnLogin.onclick = async ()=>{
+      try{
+        setStatus("로그인 시도…");
+        await signInWithPopup(auth, provider);
+      }catch(e){
+        console.error(e);
+        const code = String(e?.code || "");
+        if(code.includes("unauthorized-domain")) setStatus("도메인 미승인(github.io 등을 승인 필요)");
+        else if(code.includes("popup-blocked")) setStatus("팝업 차단됨(팝업 허용 필요)");
+        else setStatus("로그인 실패(F12 Console 확인)");
+      }
+    };
+    btnLogout.onclick = async ()=>{
+      try{ await signOut(auth); }catch(e){ console.error(e); }
+    };
 
-      if (!user) {
+    // ---- 시작 ----
+    loadLocal();
+    render();
+    setStatus("로그인하면 동기화 시작");
+
+    onAuthStateChanged(auth, async (user)=>{
+      if(unsubscribe){ unsubscribe(); unsubscribe = null; }
+
+      if(!user){
         uid = null;
         whoEl.textContent = "로그인 필요";
         btnLogin.disabled = false;
         btnLogout.disabled = true;
-        btnNew.disabled = true;
-        btnSave.disabled = true;
-
-        initSheet(blankData());
+        btnAddHere.disabled = true;
+        btnNewRoot.disabled = true;
         setStatus("로그인하면 동기화 시작");
         return;
       }
 
       uid = user.uid;
       whoEl.textContent = `로그인됨: ${user.email || user.displayName || uid}`;
-
       btnLogin.disabled = true;
       btnLogout.disabled = false;
-      btnNew.disabled = false;
-      btnSave.disabled = true;
 
-      setStatus("데이터 로딩…");
-      const data = await ensureDocExists();
-      initSheet(data);
-      setStatus("동기화 시작");
-
-      startRealtime();
+      try{
+        setStatus("데이터 로딩…");
+        // 로컬 트리 → 클라우드 우선으로 맞춤
+        const remoteTree = await ensureDocExists();
+        tree = remoteTree;
+        saveLocal();
+        render();
+        setStatus("동기화 시작");
+        startRealtime();
+      }catch(e){
+        console.error(e);
+        setStatus("동기화 오류(F12 Console 확인)");
+      }
     });
-
-    // 시작 시: 빈 시트 표시
-    initSheet(blankData());
-    setStatus("로그인하면 동기화 시작");
   </script>
 </body>
 </html>
