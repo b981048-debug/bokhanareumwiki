@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>복한아름 위키 스프레드시트 (동기화)</title>
+
+  <!-- Jspreadsheet (엑셀 UI) -->
+  <link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.css" />
+  <link rel="stylesheet" href="https://jsuites.net/v5/jsuites.css" />
+
+  <style>
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin: 0; background: #f5f5f5; }
+    .wrap {
+      max-width: 1200px; margin: 16px auto; background: #fff;
+      border-radius: 14px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    }
+    .top {
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      flex-wrap:wrap; margin-bottom: 10px;
+    }
+    .left, .right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    button {
+      border:1px solid #ddd; background:#fff; padding:8px 10px; border-radius: 10px;
+      cursor:pointer;
+    }
+    button:hover { background:#fafafa; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .badge {
+      font-size:12px; padding:6px 10px; border:1px solid #eee; border-radius:999px;
+      background:#fafafa;
+    }
+    .hint {
+      margin-top: 10px; font-size: 12px; color: #666; line-height: 1.5;
+      border-top: 1px solid #eee; padding-top: 10px;
+    }
+    #sheet { width: 100%; }
+    code { background:#f3f3f3; padding:2px 6px; border-radius: 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="left">
+        <button id="btnLogin">Google 로그인</button>
+        <button id="btnLogout" disabled>로그아웃</button>
+
+        <span class="badge" id="who">로그인 필요</span>
+        <span class="badge" id="status">대기 중…</span>
+      </div>
+
+      <div class="right">
+        <button id="btnNew" disabled>새 시트(초기화)</button>
+        <button id="btnSave" disabled>지금 저장</button>
+      </div>
+    </div>
+
+    <div id="sheet"></div>
+
+    <div class="hint">
+      ✅ 실행 주소가 <code>file:///C:/...</code>면 로그인 팝업이 막힐 수 있어요.<br/>
+      ✅ 반드시 <code>http://localhost:5500/wiki.html</code> 같이 “로컬 서버”로 여세요.<br/><br/>
+      로컬 서버 여는 법(윈도우 PowerShell):
+      <br/>1) <code>wiki.html</code> 있는 폴더에서 PowerShell 열기
+      <br/>2) <code>python -m http.server 5500</code>
+      <br/>3) 크롬에서 <code>http://localhost:5500/wiki.html</code> 접속
+      <br/><br/>
+      ※ 이 버전은 “나 혼자 쓰는 동기화” 기준으로 간단하게 만들었고, 동시에 여러 기기에서 막 수정하면 마지막 저장이 이깁니다.
+    </div>
+  </div>
+
+  <script src="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.js"></script>
+  <script src="https://jsuites.net/v5/jsuites.js"></script>
+
+  <!-- Firebase + 동기화 로직 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+      from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import {
+      getFirestore, doc, setDoc, getDoc, onSnapshot, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+    // ✅ 너 프로젝트 설정 (그대로 사용)
+    const firebaseConfig = {
+      apiKey: "AIzaSyDkJHN4clTEkuutxJdHNK4O7g3AnyP2PqU",
+      authDomain: "bokhanareumwiki.firebaseapp.com",
+      projectId: "bokhanareumwiki",
+      storageBucket: "bokhanareumwiki.firebasestorage.app",
+      messagingSenderId: "304683112768",
+      appId: "1:304683112768:web:dd2cca4b36614aa2a282a5"
+    };
+
+    // ---- 기본 세팅 ----
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+    const db = getFirestore(app);
+
+    const $ = (id) => document.getElementById(id);
+    const btnLogin = $("btnLogin");
+    const btnLogout = $("btnLogout");
+    const btnNew = $("btnNew");
+    const btnSave = $("btnSave");
+    const whoEl = $("who");
+    const statusEl = $("status");
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    // ---- 스프레드시트 ----
+    let sheet = null;
+
+    function blankData(rows = 20, cols = 10) {
+      return Array.from({ length: rows }, () => Array.from({ length: cols }, () => ""));
+    }
+
+    function initSheet(data) {
+      if (sheet) sheet.destroy();
+      sheet = jspreadsheet(document.getElementById("sheet"), {
+        data,
+        minDimensions: [10, 20], // [cols, rows]
+        columnDrag: true,
+        rowDrag: true,
+        allowInsertRow: true,
+        allowInsertColumn: true,
+        allowDeleteRow: true,
+        allowDeleteColumn: true,
+
+        // 셀 변경 감지
+        onchange: () => {
+          if (isApplyingRemote) return;
+          scheduleSave();
+        }
+      });
+    }
+
+    // ---- Firestore 동기화 ----
+    let uid = null;
+    let unsubscribe = null;
+    let isApplyingRemote = false;
+    let lastVersion = 0;
+    let saveTimer = null;
+
+    function sheetDocRef() {
+      // 사용자별 기본 시트 1개
+      return doc(db, "users", uid, "sheets", "default");
+    }
+
+    function scheduleSave() {
+      setStatus("로컬 변경 감지… 저장 대기");
+      btnSave.disabled = false;
+
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNow, 600); // 디바운스
+    }
+
+    async function saveNow() {
+      if (!uid || !sheet) return;
+
+      const ref = sheetDocRef();
+      const version = Date.now();
+      lastVersion = Math.max(lastVersion, version);
+
+      const payload = {
+        version,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+        data: sheet.getData()
+      };
+
+      try {
+        setStatus("저장 중…");
+        await setDoc(ref, payload, { merge: true });
+        setStatus("저장 완료");
+        btnSave.disabled = true;
+      } catch (e) {
+        console.error(e);
+        setStatus("저장 실패(콘솔 F12 확인)");
+      }
+    }
+
+    async function ensureDocExists() {
+      const ref = sheetDocRef();
+      const snap = await getDoc(ref);
+
+      if (!snap.exists()) {
+        // 최초 생성
+        const version = Date.now();
+        lastVersion = version;
+
+        await setDoc(ref, {
+          version,
+          updatedAt: serverTimestamp(),
+          updatedBy: uid,
+          data: blankData()
+        }, { merge: true });
+
+        return blankData();
+      }
+
+      const data = snap.data()?.data;
+      lastVersion = snap.data()?.version || 0;
+      return Array.isArray(data) ? data : blankData();
+    }
+
+    function startRealtime() {
+      const ref = sheetDocRef();
+
+      unsubscribe = onSnapshot(ref, (snap) => {
+        if (!snap.exists()) return;
+
+        const remote = snap.data();
+        const remoteVersion = remote?.version || 0;
+        const remoteData = remote?.data;
+
+        if (remoteVersion > lastVersion && Array.isArray(remoteData)) {
+          lastVersion = remoteVersion;
+          isApplyingRemote = true;
+          try {
+            setStatus("원격 변경 적용 중…");
+            initSheet(remoteData);
+            setStatus("동기화 완료");
+            btnSave.disabled = true;
+          } finally {
+            isApplyingRemote = false;
+          }
+        } else {
+          setStatus("최신 상태");
+        }
+      });
+    }
+
+    async function resetSheet() {
+      if (!uid) return;
+      const ref = sheetDocRef();
+
+      const version = Date.now();
+      lastVersion = version;
+
+      try {
+        setStatus("초기화 저장 중…");
+        await setDoc(ref, {
+          version,
+          updatedAt: serverTimestamp(),
+          updatedBy: uid,
+          data: blankData()
+        }, { merge: true });
+
+        setStatus("초기화 완료");
+      } catch (e) {
+        console.error(e);
+        setStatus("초기화 실패(콘솔 F12 확인)");
+      }
+    }
+
+    // ---- UI 이벤트 ----
+    btnLogin.onclick = async () => {
+      try {
+        setStatus("로그인 시도…");
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        console.error(e);
+        // 대표 에러 안내
+        if (String(e?.code || "").includes("unauthorized-domain")) {
+          setStatus("도메인 미승인(콘솔에서 localhost 승인 필요)");
+        } else if (String(e?.code || "").includes("popup-blocked")) {
+          setStatus("팝업 차단됨(팝업 허용 필요)");
+        } else {
+          setStatus("로그인 실패(콘솔 F12 확인)");
+        }
+      }
+    };
+
+    btnLogout.onclick = async () => {
+      try {
+        await signOut(auth);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    btnNew.onclick = async () => {
+      if (!confirm("정말 새 시트로 초기화할까요? (동기화된 데이터도 초기화됩니다)")) return;
+      await resetSheet();
+    };
+
+    btnSave.onclick = async () => {
+      await saveNow();
+    };
+
+    // ---- 로그인 상태 변화 ----
+    onAuthStateChanged(auth, async (user) => {
+      // 구독 정리
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+
+      if (!user) {
+        uid = null;
+        whoEl.textContent = "로그인 필요";
+        btnLogin.disabled = false;
+        btnLogout.disabled = true;
+        btnNew.disabled = true;
+        btnSave.disabled = true;
+
+        initSheet(blankData());
+        setStatus("로그인하면 동기화 시작");
+        return;
+      }
+
+      uid = user.uid;
+
+      whoEl.textContent = `로그인됨: ${user.email || user.displayName || uid}`;
+      btnLogin.disabled = true;
+      btnLogout.disabled = false;
+      btnNew.disabled = false;
+      btnSave.disabled = true;
+
+      setStatus("데이터 로딩…");
+      const data = await ensureDocExists();
+      initSheet(data);
+      setStatus("동기화 시작");
+
+      startRealtime();
+    });
+
+    // 시작 시: 빈 시트
+    initSheet(blankData());
+    setStatus("로그인하면 동기화 시작");
+  </script>
+</body>
+</html>
