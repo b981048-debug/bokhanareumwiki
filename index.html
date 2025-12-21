@@ -1,510 +1,1132 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>복한아름 버튼 트리 (동기화)</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>버튼 트리</title>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    body { margin:0; background:#f5f5f5; padding: 12px; }
-    .wrap{
-      max-width: 980px; margin: 0 auto; background:#fff; border-radius: 14px;
-      padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    body { margin: 0; padding: 12px; background: #f5f5f5; }
+    button { cursor: pointer; border-radius: 10px; border: 1px solid #ddd; background: #fff; padding: 8px 10px; font-size: 13px; text-align:center; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input, select { font: inherit; }
+
+    .app {
+      max-width: 1200px; margin: 0 auto; background: #fff;
+      border-radius: 14px; padding: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      min-height: calc(100vh - 24px);
+      display:flex; flex-direction:column; gap:10px;
     }
-    .top{
-      display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;
-      margin-bottom: 10px;
+
+    .header { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .title { margin:0; font-size:18px; display:flex; align-items:center; gap:10px; }
+    .header-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .pill {
+      font-size:12px; padding:4px 10px; border-radius:999px;
+      border:1px solid #ddd; background:#fafafa; font-weight:800;
+      max-width: 320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      text-align:center;
     }
-    .left, .right{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    button{
-      border:1px solid #ddd; background:#fff; padding:8px 10px; border-radius: 10px;
+
+    .movebox,.searchbox{
+      display:none; align-items:center; gap:6px; flex-wrap:wrap;
+      padding:6px; border:1px solid #eee; border-radius:12px; background:#fafafa;
+      position: relative;
+    }
+    .movebox.show,.searchbox.show{ display:flex; }
+    .move-search,.search-input{
+      border:1px solid #ddd; border-radius:12px; padding:8px 10px; font-size:13px;
+      min-width: 260px; outline:none; background:#fff;
+    }
+    .search-input{ min-width: 320px; }
+    .smallpill{
+      font-size:12px; padding:4px 10px; border-radius:999px;
+      border:1px solid #ddd; background:#fff; font-weight:800;
+      text-align:center;
+    }
+
+    .dropdown{
+      position:absolute; top: calc(100% + 6px); right: 0;
+      width: min(680px, 92vw);
+      max-height: 320px;
+      overflow:auto;
+      background:#fff;
+      border:1px solid #ddd;
+      border-radius:12px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.12);
+      padding:8px;
+      display:none;
+      z-index: 99;
+    }
+    .dropdown.show{ display:block; }
+    .res-item{
+      display:flex; gap:8px; align-items:center;
+      background:#fff; border:1px solid transparent;
+      border-radius:10px; padding:8px; margin-bottom:6px;
       cursor:pointer;
     }
-    button:hover{ background:#fafafa; }
-    button:disabled{ opacity:.5; cursor:not-allowed; }
-    .badge{
-      font-size:12px; padding:6px 10px; border:1px solid #eee; border-radius:999px; background:#fafafa;
+    .res-item:last-child{ margin-bottom:0; }
+    .res-item:hover{ border-color:#ddd; }
+    .res-item.disabled{ opacity:.45; cursor:not-allowed; background:#f4f4f4; }
+    .res-title{ font-size:13px; font-weight:800; }
+    .res-path{ font-size:11px; opacity:.65; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 340px; }
+    .res-tag{
+      font-size:11px; padding:2px 8px; border-radius:999px;
+      border:1px solid #e6e6e6; background:#fafafa; font-weight:900; opacity:.9;
+      white-space:nowrap;
     }
 
-    .panel{
-      border:1px solid #eee; border-radius: 12px; padding: 10px; background:#fff;
-    }
-    .head{
-      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-      margin-bottom: 8px;
-    }
-    .head small{ opacity:.75; }
-    .spacer{ flex: 1; }
+    .nav-mini{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .nav-left{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+    .nav-right{ margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+    .mode-btn{ font-weight:800; background:#fafafa; border-color:#ddd; }
+    .mode-btn.active{ background:#eef7ff; border-color:#b3d4ff; }
 
-    .buttons-area{
-      margin-top: 8px;
-      max-height: 60vh;
-      overflow-y: auto;
-      border: 1px solid #eee;
-      border-radius: 12px;
-      padding: 8px;
-      background: #fff;
-      -webkit-overflow-scrolling: touch;
+    .editpanel{
+      display:none;
+      border:1px solid #eee;
+      border-radius:12px;
+      background:#fafafa;
+      padding:10px;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .editpanel.show{ display:flex; }
+    .editpanel label{
+      display:flex; align-items:center; gap:8px;
+      font-size:12px;
+      padding:6px 10px;
+      border:1px solid #e6e6e6;
+      border-radius:999px;
+      background:#fff;
+    }
+    .range{ width: 240px; }
+    .kv{ font-weight:900; min-width: 50px; text-align:right; }
+
+    .crumbbar{
+      display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+      padding:10px; border:1px solid #eee; border-radius:12px; background:#fafafa;
+    }
+    .crumb-chip{
+      display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid #ddd; background:#fff;
+      padding:7px 10px; border-radius:999px; font-size:12px;
+      text-align:center;
+    }
+    .crumb-chip.active{ background:#eef7ff; border-color:#b3d4ff; font-weight:900; }
+    .crumb-sep{ opacity:.45; user-select:none; }
+
+    .split{
+      --panePad: 12px;
+      --hCtrlMin: 44px;
+      flex: 1; display:flex; min-height: 0;
+      border:1px solid #eee; border-radius:14px; overflow:hidden; background:#fff;
+      min-width:0;
+    }
+    .pane{
+      min-height: 0;
+      min-width: 0;
+      overflow: hidden;
+      padding: 0;
+      background:#fff;
+      display:flex;
+      flex-direction:column;
+    }
+    .divider{
+      width: 8px; background: #f2f2f2;
+      border-left: 1px solid #e6e6e6; border-right: 1px solid #e6e6e6;
+      cursor: col-resize; position: relative;
+      flex: 0 0 auto;
+    }
+    .divider::after{
+      content:""; position:absolute; top: 50%; left: 50%;
+      width: 3px; height: 44px; transform: translate(-50%,-50%);
+      border-radius: 999px; background: #d7d7d7;
+      box-shadow: -6px 0 0 #d7d7d7, 6px 0 0 #d7d7d7;
+      opacity: .9;
+    }
+
+    #leftPane { width:50%; min-width:0; }
+    #rightPane{ width:50%; min-width:0; background:#fff; }
+
+    .scrollWrap{
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+      overflow: auto;
+      padding: var(--panePad);
+      transition: padding 160ms ease;
       overscroll-behavior: contain;
     }
 
+    #leftScrollWrap, #rightScrollWrap{
+      overflow-x: auto;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    #leftScrollWrap::-webkit-scrollbar,
+    #rightScrollWrap::-webkit-scrollbar{ height: 0; width: 0; }
+
+    .hctrl{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      height: 18px;
+      margin: 8px var(--panePad) 12px;
+      user-select:none;
+      flex:0 0 auto;
+      min-width: var(--hCtrlMin);
+    }
+    .hbtn{
+      width: 22px;
+      height: 18px;
+      padding: 0;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 16px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
+    }
+    .hbtn:disabled{ opacity:.35; }
+
+    .htrack{
+      position: relative;
+      height: 10px;
+      flex: 1;
+      border: 1px solid #e6e6e6;
+      border-radius: 999px;
+      background: #f3f3f3;
+      min-width: 8px;
+      overflow:hidden;
+    }
+    .hthumb{
+      position:absolute;
+      top:-1px;
+      bottom:-1px;
+      left:0;
+      width: 44px;
+      border-radius: 999px;
+      border: 1px solid #d8d8d8;
+      background: #fff;
+      cursor: grab;
+    }
+    .hthumb:active{ cursor: grabbing; }
+
     .btn-row{
-      display:flex; gap:6px; align-items:center;
-      margin-bottom: 6px;
-    }
-    .btn-main{
-      flex:1;
-      text-align:left;
-      padding:10px;
-      border-radius: 10px;
-      border:1px solid #ccc;
-      background:#fafafa;
-      min-height: 40px;
-      font-size: 14px;
-    }
-    .btn-controls{
-      display:flex; gap:4px; flex-wrap:wrap;
-    }
-    .btn-controls button{
-      padding:6px 8px; font-size: 12px; border-radius: 9px;
+      display:flex;
+      align-items:stretch;
+      margin-bottom:6px;
+      flex-wrap: nowrap;
+      gap: 0;
+      width: max-content;
+      min-width: 100%;
     }
 
-    .hint{
-      margin-top: 10px; font-size: 12px; color: #666; line-height: 1.5;
-      border-top: 1px solid #eee; padding-top: 10px;
+    .pickcursor{
+      width: 18px; height: 18px; border-radius: 999px;
+      border: 2px solid #bbb; background:#fff; flex:0 0 auto;
+      display:none; position:relative; cursor:pointer;
+      margin-top: 10px;
+      margin-right: 6px;
+      flex-shrink: 0;
     }
-    .empty{
-      font-size: 12px; opacity:.75; padding: 8px;
-      border:1px dashed #ddd; border-radius: 10px; background:#fbfbfb;
+    .pickcursor.show{ display:inline-block; }
+    .pickcursor.selected{ border-color:#3b82f6; }
+    .pickcursor.selected::after{ content:""; position:absolute; inset:3px; border-radius:999px; background:#3b82f6; }
+    .pickcursor.disabled{ border-color:#cfcfcf; cursor:not-allowed; opacity:.6; }
+
+    .btn-main{
+      flex: 0 0 auto;
+      flex-shrink: 0;
+      text-align:center;
+      padding:10px;
+      border-radius:12px;
+      border:1px solid #ccc;
+      background:#fafafa;
+      font-size:14px;
+      min-height:42px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
     }
-    code { background:#f3f3f3; padding:2px 6px; border-radius: 6px; }
+    .btn-main.active{ background:#eef7ff; border-color:#b3d4ff; font-weight:900; }
+
+    .btn-controls{
+      flex: 0 0 auto;
+      flex-shrink: 0;
+      display:flex;
+      gap:2px;
+      flex-wrap:nowrap;
+      justify-content:flex-start;
+      align-items:stretch;
+      margin-left: 0;
+      min-width: 0;
+    }
+    .btn-controls button{
+      font-size:11px;
+      padding:6px 8px;
+      border-radius:10px;
+      text-align:center;
+      white-space:nowrap;
+      flex: 0 0 auto;
+      flex-shrink: 0;
+    }
+
+    .empty-text{
+      padding:10px; border:1px dashed #ddd; border-radius:12px;
+      font-size:13px; opacity:.75; white-space:pre-wrap; background:#fbfbfb;
+      text-align:center;
+    }
+
+    .note-head{
+      display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap;
+      margin-bottom: 10px;
+    }
+    .note-title{
+      font-size:14px; font-weight:900;
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    }
+    .badge{
+      font-size:11px; padding:3px 9px; border-radius:999px;
+      border:1px solid #ddd; background:#fafafa; font-weight:900; opacity:.9;
+      max-width: 420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      text-align:center;
+    }
+    .note-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+
+    .note-view{
+      border:1px solid #eee; background:#fafafa; border-radius:12px;
+      padding:10px; min-height: 260px; white-space:normal; line-height:1.55;
+      font-size:13px; overflow:auto;
+    }
+    .note-view .note-empty{ opacity:.65; font-style: italic; }
+
+    .editor-toolbar{
+      display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+      border:1px solid #ddd; border-radius:12px;
+      padding:8px; background:#fafafa;
+      margin-bottom:8px;
+    }
+    .toolbtn{ padding:6px 10px; border-radius:10px; font-size:12px; background:#fff; }
+    .colorpick{
+      width: 42px; height: 32px; padding: 0;
+      border-radius: 10px; border: 1px solid #ddd;
+      background:#fff; cursor:pointer;
+    }
+    .toolselect{
+      height: 32px; border-radius:10px; border:1px solid #ddd;
+      padding:0 10px; background:#fff; font-size:12px;
+    }
+
+    .note-editor{
+      border:1px solid #ddd; border-radius:12px;
+      padding:10px; min-height: 360px;
+      background:#fff; outline:none; overflow:auto;
+      line-height:1.55; font-size:13px; white-space: normal;
+    }
+    .note-editor:empty::before{ content:"여기에 내용을 입력하세요..."; color:#999; }
+
+    .note-view table, .note-editor table{
+      border-collapse: collapse;
+      width: auto;
+      max-width: 100%;
+      margin: 8px auto;
+      table-layout: fixed;
+    }
+    .note-view td, .note-view th,
+    .note-editor td, .note-editor th{
+      border:1px solid #bbb;
+      padding:6px;
+      min-width: 40px;
+      position: relative;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .resize-col { cursor: col-resize !important; }
+    .resize-row { cursor: row-resize !important; }
+
+    .modal-backdrop{
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.35);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index: 9999;
+      padding: 12px;
+    }
+    .modal-backdrop.show{ display:flex; }
+    .modal{
+      width: min(420px, 95vw);
+      background:#fff;
+      border-radius:14px;
+      border:1px solid #e6e6e6;
+      box-shadow:0 12px 36px rgba(0,0,0,.18);
+      padding: 12px;
+    }
+    .modal h3{ margin: 0 0 10px; font-size:14px; }
+    .modal .row{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    .modal label{
+      font-size:12px; display:flex; gap:6px; align-items:center;
+      background:#fafafa; border:1px solid #eee; padding:8px 10px; border-radius:12px;
+      flex:1; min-width: 160px;
+    }
+    .modal input{
+      width: 100%;
+      padding:8px 10px;
+      border:1px solid #ddd;
+      border-radius:10px;
+      outline:none;
+      background:#fff;
+      font-size:13px;
+    }
+    .modal .actions{
+      display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;
+    }
+    .hint{ font-size:12px; opacity:.65; margin-top: 6px; }
+
+    .stat-grid{ display:grid; grid-template-columns: 1fr; gap:8px; margin-top:10px; }
+    .stat-card{
+      border:1px solid #eee; border-radius:12px; background:#fafafa;
+      padding:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;
+    }
+    .stat-k{ font-size:12px; opacity:.75; font-weight:800; }
+    .stat-v{ font-size:16px; font-weight:950; }
+    .mono{ font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div class="left">
-        <button id="btnLogin">Google 로그인</button>
-        <button id="btnLogout" disabled>로그아웃</button>
-        <span class="badge" id="who">로그인 필요</span>
-        <span class="badge" id="status">대기 중…</span>
-      </div>
-      <div class="right">
-        <button id="btnNewRoot" disabled>ROOT 초기화</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="head">
-        <button id="btnUp">◀ 상위로</button>
-        <button id="btnRoot">⬆ 최상위</button>
-        <small id="breadcrumb">위치: ROOT</small>
-        <span class="spacer"></span>
-        <button id="btnAddHere" disabled>+ 이 위치에 새 버튼</button>
+<div class="app">
+  <div class="header">
+    <h1 class="title">버튼 트리</h1>
+    <div class="header-right">
+      <div class="movebox" id="moveBox">
+        <span class="pill" id="movePillSource">출발: -</span>
+        <span class="pill" id="movePillTarget">대상: -</span>
+        <input class="move-search" id="moveSearchInput" placeholder="대상 검색 후 선택" />
+        <button id="btnMoveConfirm" type="button" disabled>이동확정</button>
+        <button id="btnMoveCancel" type="button">취소</button>
+        <div class="dropdown" id="moveDropdown"></div>
       </div>
 
-      <div class="buttons-area" id="buttonContainer"></div>
-
-      <div class="hint">
-        ✅ 버튼을 누르면: <b>하위 버튼이 있으면</b> 그 안으로 이동 / <b>없으면</b> 아무 동작 없이 유지(원하면 나중에 “기록” 기능 추가 가능)<br/>
-        ✅ 버튼 기능: 추가 / 하위추가 / 위·아래 이동 / 이름변경 / 삭제<br/>
-        ✅ 동기화 문서 위치: <code>users/{uid}/buttonTree/default</code>
+      <div class="searchbox" id="searchBox">
+        <span class="smallpill" id="searchCountPill">검색: 0</span>
+        <input class="search-input" id="searchInput" placeholder="버튼이름 또는 내용에서 키워드 검색" />
+        <button id="btnSearchClear" type="button">지우기</button>
+        <button id="btnSearchClose" type="button">닫기</button>
+        <div class="dropdown" id="searchDropdown"></div>
       </div>
     </div>
   </div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-    import {
-      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
-    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
-    import {
-      getFirestore, doc, setDoc, getDoc, onSnapshot, serverTimestamp
-    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+  <div class="nav-mini">
+    <div class="nav-left">
+      <button id="btnUp" type="button">◀ 상위로</button>
+      <button id="btnAll" type="button">⬆ 전체로</button>
+      <button id="btnAddHere" type="button">+ 새버튼</button>
+    </div>
+    <div class="nav-right">
+      <button class="mode-btn" id="btnBackupMode" type="button">백업모드</button>
+      <button class="mode-btn" id="btnEditMode" type="button">편집모드</button>
+      <button class="mode-btn" id="btnMoveMode" type="button">이동모드</button>
+      <button class="mode-btn" id="btnSearchMode" type="button">검색모드</button>
+      <button class="mode-btn" id="btnStatsMode" type="button">통계모드</button>
+    </div>
+  </div>
 
-    // ✅ 네 프로젝트 설정(기존 bokhanareumwiki 그대로)
-    const firebaseConfig = {
-      apiKey: "AIzaSyDkJHN4clTEkuutxJdHNK4O7g3AnyP2PqU",
-      authDomain: "bokhanareumwiki.firebaseapp.com",
-      projectId: "bokhanareumwiki",
-      storageBucket: "bokhanareumwiki.firebasestorage.app",
-      messagingSenderId: "304683112768",
-      appId: "1:304683112768:web:dd2cca4b36614aa2a282a5"
+  <div class="editpanel" id="editPanel">
+    <label>
+      버튼 길이
+      <input class="range" id="btnWidthRange" type="range" min="10" max="160" step="1" />
+      <span class="kv"><span id="btnWidthVal">15</span>%</span>
+    </label>
+    <span style="font-size:12px; opacity:.65;">※ 편집모드에서만 조절 가능, 모든 버튼에 동일 적용</span>
+  </div>
+
+  <div class="crumbbar" id="breadcrumbBar"></div>
+
+  <div class="split" id="split">
+    <div class="pane" id="leftPane">
+      <div class="scrollWrap" id="leftScrollWrap">
+        <div id="buttonContainer"></div>
+      </div>
+
+      <div class="hctrl" id="leftHCtrl">
+        <button class="hbtn" id="leftBtnL" type="button">◀</button>
+        <div class="htrack" id="leftTrack"><div class="hthumb" id="leftThumb"></div></div>
+        <button class="hbtn" id="leftBtnR" type="button">▶</button>
+      </div>
+    </div>
+
+    <div class="divider" id="divider" title="드래그로 폭 조절"></div>
+
+    <div class="pane" id="rightPane">
+      <div class="scrollWrap" id="rightScrollWrap">
+        <div class="note-head">
+          <div class="note-title">
+            내용
+            <span class="badge" id="noteForLabel">선택: 전체</span>
+            <span class="badge" id="notePathLabel">전체</span>
+          </div>
+          <div class="note-actions" id="noteActions">
+            <button id="btnNoteEdit" type="button">수정</button>
+            <button id="btnNoteSave" type="button" style="display:none;">저장</button>
+            <button id="btnNoteCancel" type="button" style="display:none;">취소</button>
+          </div>
+        </div>
+
+        <div class="note-view" id="noteView"></div>
+
+        <div id="editorWrap" style="display:none;">
+          <div class="editor-toolbar">
+            <button class="toolbtn" id="toolBold" type="button"><b>B</b></button>
+            <button class="toolbtn" id="toolItalic" type="button"><i>I</i></button>
+            <button class="toolbtn" id="toolUnderline" type="button"><u>U</u></button>
+
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              글자크기
+              <select class="toolselect" id="toolFontSize">
+                <option value="12px">12</option>
+                <option value="13px" selected>13</option>
+                <option value="14px">14</option>
+                <option value="16px">16</option>
+                <option value="18px">18</option>
+                <option value="20px">20</option>
+                <option value="24px">24</option>
+                <option value="28px">28</option>
+              </select>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              형광색
+              <input class="colorpick" id="toolHighlightColor" type="color" value="#fff59d" />
+            </label>
+            <button class="toolbtn" id="toolHighlight" type="button">형광펜</button>
+
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              글자색
+              <input class="colorpick" id="toolColor" type="color" value="#000000" />
+            </label>
+
+            <button class="toolbtn" id="toolTable" type="button">표 삽입</button>
+            <button class="toolbtn" id="toolMerge" type="button">표합침</button>
+            <button class="toolbtn" id="toolSplit" type="button">표나눔</button>
+            <button class="toolbtn" id="toolAddRow" type="button">행추가</button>
+            <button class="toolbtn" id="toolAddCol" type="button">열추가</button>
+
+            <button class="toolbtn" id="toolClear" type="button">서식제거</button>
+          </div>
+
+          <div class="note-editor" id="noteEditor" contenteditable="true"></div>
+        </div>
+      </div>
+
+      <div class="hctrl" id="rightHCtrl">
+        <button class="hbtn" id="rightBtnL" type="button">◀</button>
+        <div class="htrack" id="rightTrack"><div class="hthumb" id="rightThumb"></div></div>
+        <button class="hbtn" id="rightBtnR" type="button">▶</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 표 삽입 모달 -->
+<div class="modal-backdrop" id="tableModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tableModalTitle">
+    <h3 id="tableModalTitle">표 삽입</h3>
+    <div class="row">
+      <label>행
+        <input id="tableRows" type="number" min="1" max="50" value="3" />
+      </label>
+      <label>열
+        <input id="tableCols" type="number" min="1" max="20" value="3" />
+      </label>
+    </div>
+    <div class="actions">
+      <button id="tableCancel" type="button">취소</button>
+      <button id="tableOk" type="button">삽입</button>
+    </div>
+    <div class="hint">행 1~50, 열 1~20</div>
+  </div>
+</div>
+
+<!-- 통계 모달 -->
+<div class="modal-backdrop" id="statsModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="statsModalTitle">
+    <h3 id="statsModalTitle">통계</h3>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-k">총 버튼 개수 (전체 제외)</div>
+        <div class="stat-v mono" id="statTotalButtons">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-k">내용이 있는 버튼 개수 (내용 총 개수)</div>
+        <div class="stat-v mono" id="statHasContent">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-k">전체 내용 글자수 (텍스트 기준)</div>
+        <div class="stat-v mono" id="statTotalChars">0</div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:12px;">
+      <button id="statsClose" type="button">닫기</button>
+    </div>
+    <div class="hint">※ 글자수는 HTML 서식을 제외한 “텍스트” 기준으로 계산됩니다.</div>
+  </div>
+</div>
+
+<script>
+/* ===========================
+   ✅ JS 에러로 멈추지 않게 하는 안전 장치
+   =========================== */
+const $ = (id) => document.getElementById(id);
+function onClick(id, fn){
+  const el = $(id);
+  if (!el) { console.warn("missing element:", id); return; }
+  el.addEventListener("click", (e) => {
+    try { fn(e); } catch (err) { console.error(err); alert("오류가 발생했어요. (콘솔 확인)"); }
+  });
+}
+function onInput(id, fn){
+  const el = $(id);
+  if (!el) { console.warn("missing element:", id); return; }
+  el.addEventListener("input", (e) => {
+    try { fn(e); } catch (err) { console.error(err); }
+  });
+}
+
+/* ===== Persist keys ===== */
+const PERSIST = {
+  LS_KEY: "bokhanareum_button_tree_PERSIST",
+  IDB_NAME: "bokhanareum_button_tree_DB",
+  IDB_STORE: "kv",
+  IDB_DOC_KEY: "state",
+};
+
+/* ✅ 최초 기본값 15% */
+let state = {
+  version: 12,
+  updatedAt: 0,
+  ui: {
+    splitLeftPx: null,
+    buttonWidthPct: 15,
+    mainButtonPx: null,
+    editMode: false,
+    backupMode: false,
+    searchMode: false,
+  },
+  tree: { id:"root", label:"전체", note:"", noteHtml:null, children:[] },
+};
+
+let currentParentId = "root";
+let selectedNodeId = "root";
+let noteEditMode = false;
+
+/* ===== IndexedDB ===== */
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PERSIST.IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(PERSIST.IDB_STORE)) db.createObjectStore(PERSIST.IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PERSIST.IDB_STORE, "readonly");
+    const store = tx.objectStore(PERSIST.IDB_STORE);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+async function idbSet(key, value) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PERSIST.IDB_STORE, "readwrite");
+    const store = tx.objectStore(PERSIST.IDB_STORE);
+    const req = store.put(value, key);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+/* ===== Persist helpers ===== */
+function ensureNodeFields(node){
+  if (!node) return;
+  if (typeof node.note !== "string") node.note = "";
+  if (typeof node.noteHtml !== "string" && node.noteHtml !== null) node.noteHtml = null;
+  if (!Array.isArray(node.children)) node.children = [];
+  for (const c of node.children) ensureNodeFields(c);
+}
+function migrateRootLabel(tree){ if (tree && tree.id === "root") tree.label = "전체"; }
+
+async function persistState(){
+  state.updatedAt = Date.now();
+  try { localStorage.setItem(PERSIST.LS_KEY, JSON.stringify(state)); } catch {}
+  try { await idbSet(PERSIST.IDB_DOC_KEY, state); } catch {}
+}
+async function loadState(){
+  let from = null;
+  try { from = await idbGet(PERSIST.IDB_DOC_KEY); } catch {}
+  if (!from) {
+    try {
+      const raw = localStorage.getItem(PERSIST.LS_KEY);
+      from = raw ? JSON.parse(raw) : null;
+    } catch {}
+  }
+  if (from && from.tree) {
+    state = { ...state, ...from, ui: { ...state.ui, ...(from.ui||{}) } };
+  }
+  ensureNodeFields(state.tree);
+  migrateRootLabel(state.tree);
+  await persistState();
+}
+
+/* ===== Tree utils ===== */
+function genId(){ return "id_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,10); }
+function findNodeById(node,id){
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (const c of (node.children||[])){ const f = findNodeById(c,id); if (f) return f; }
+  return null;
+}
+function findParentNode(root,targetId){
+  if (!root) return null;
+  for (const c of (root.children||[])){
+    if (c.id === targetId) return root;
+    const f = findParentNode(c,targetId);
+    if (f) return f;
+  }
+  return null;
+}
+function getCurrentParentNode(){
+  const node = findNodeById(state.tree,currentParentId);
+  if (!node) currentParentId = "root";
+  return node || state.tree;
+}
+function getPathToId(targetId){
+  const path = [];
+  function dfs(n){
+    path.push(n);
+    if (n.id === targetId) return true;
+    for (const c of (n.children||[])) if (dfs(c)) return true;
+    path.pop(); return false;
+  }
+  dfs(state.tree);
+  return path.length ? path : [state.tree];
+}
+function getPathToCurrent(){ return (currentParentId==="root") ? [state.tree] : getPathToId(currentParentId); }
+
+function flattenTreeWithPaths(){
+  const out = [];
+  function walk(n, pathLabels){
+    const label = (n.id==="root") ? "전체" : n.label;
+    const next = [...pathLabels, label];
+    out.push({ id:n.id, label, pathLabels: next });
+    for (const c of (n.children||[])) walk(c, next);
+  }
+  walk(state.tree, []);
+  return out;
+}
+
+/* ===== Breadcrumb ===== */
+function renderBreadcrumbButtons(){
+  const bar = $("breadcrumbBar");
+  if (!bar) return;
+  bar.innerHTML = "";
+  const path = getPathToCurrent();
+  path.forEach((node, idx) => {
+    const chip = document.createElement("button");
+    chip.className = "crumb-chip" + (idx===path.length-1 ? " active" : "");
+    chip.type = "button";
+    chip.textContent = (node.id==="root") ? "전체" : node.label;
+    chip.onclick = () => { currentParentId = node.id; render(); };
+    bar.appendChild(chip);
+    if (idx !== path.length-1) {
+      const sep = document.createElement("span");
+      sep.className="crumb-sep"; sep.textContent="›";
+      bar.appendChild(sep);
+    }
+  });
+}
+
+/* ===== 통계/검색 ===== */
+function stripHtmlToText(html){
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html || "";
+  return (tmp.innerText || "").replace(/\u00A0/g, " ");
+}
+function computeStats(){
+  let totalButtons = 0;
+  let contentCount = 0;
+  let totalChars = 0;
+
+  function walk(n){
+    if (!n) return;
+    if (n.id !== "root") totalButtons++;
+
+    const text = (() => {
+      if (typeof n.noteHtml === "string" && n.noteHtml !== null) return stripHtmlToText(n.noteHtml);
+      if (typeof n.note === "string") return n.note;
+      return "";
+    })().trim();
+
+    if (text.length > 0) contentCount++;
+    totalChars += text.length;
+
+    for (const c of (n.children||[])) walk(c);
+  }
+  walk(state.tree);
+
+  return { totalButtons, contentCount, totalChars };
+}
+function openStatsModal(){
+  const s = computeStats();
+  $("statTotalButtons").textContent = String(s.totalButtons);
+  $("statHasContent").textContent = String(s.contentCount);
+  $("statTotalChars").textContent = String(s.totalChars);
+  $("statsModal").classList.add("show");
+}
+function closeStatsModal(){
+  $("statsModal").classList.remove("show");
+}
+
+function setSearchMode(on){
+  state.ui.searchMode = !!on;
+  $("searchBox").classList.toggle("show", state.ui.searchMode);
+  $("btnSearchMode").classList.toggle("active", state.ui.searchMode);
+  if (state.ui.searchMode) setTimeout(()=>$("searchInput")?.focus(),0);
+  else {
+    hideSearchDropdown();
+    $("searchInput").value = "";
+    $("searchCountPill").textContent = "검색: 0";
+  }
+}
+function hideSearchDropdown(){
+  const dd = $("searchDropdown");
+  dd.classList.remove("show");
+  dd.innerHTML = "";
+}
+function showSearchDropdown(results){
+  const dd = $("searchDropdown");
+  dd.innerHTML = "";
+  $("searchCountPill").textContent = "검색: " + results.length;
+
+  if (!results.length) {
+    const div = document.createElement("div");
+    div.className = "empty-text";
+    div.textContent = "검색 결과가 없습니다.";
+    dd.appendChild(div);
+    dd.classList.add("show");
+    return;
+  }
+
+  results.slice(0, 300).forEach(r => {
+    const row = document.createElement("div");
+    row.className = "res-item";
+    const title = document.createElement("div");
+    title.className="res-title";
+    title.textContent = r.label;
+
+    const tag = document.createElement("span");
+    tag.className = "res-tag";
+    tag.textContent = r.matchType;
+
+    const path = document.createElement("div");
+    path.className="res-path";
+    path.textContent = r.pathLabels.join(" > ");
+
+    row.appendChild(title);
+    row.appendChild(tag);
+    row.appendChild(path);
+
+    row.onclick = () => {
+      selectedNodeId = r.id;
+      const parent = findParentNode(state.tree, r.id);
+      currentParentId = parent ? parent.id : "root";
+      render();
+      hideSearchDropdown();
     };
 
-    // ---- 기본 세팅 ----
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const provider = new GoogleAuthProvider();
-    const db = getFirestore(app);
+    dd.appendChild(row);
+  });
 
-    const $ = (id) => document.getElementById(id);
-    const btnLogin = $("btnLogin");
-    const btnLogout = $("btnLogout");
-    const btnNewRoot = $("btnNewRoot");
-    const btnAddHere = $("btnAddHere");
-    const btnUp = $("btnUp");
-    const btnRoot = $("btnRoot");
-    const whoEl = $("who");
-    const statusEl = $("status");
-    const bcEl = $("breadcrumb");
-    const container = $("buttonContainer");
+  dd.classList.add("show");
+}
+function runSearch(q){
+  const query = (q || "").trim().toLowerCase();
+  if (!query) { hideSearchDropdown(); $("searchCountPill").textContent = "검색: 0"; return; }
 
-    function setStatus(msg){ statusEl.textContent = msg; }
+  const all = [];
+  function walk(n, pathLabels){
+    const label = (n.id==="root") ? "전체" : n.label;
+    const nextPath = [...pathLabels, label];
 
-    // ---- 로컬 저장(로그인 전/오프라인 대비) ----
-    const LS_KEY = "bok_buttonTree_v1";
+    const buttonHit = (label || "").toLowerCase().includes(query);
 
-    // ---- 트리 모델 ----
-    let tree = null;              // {id,label,children:[...]}
-    let currentParentId = "root"; // 현재 위치
-    let uid = null;
+    const text = (() => {
+      if (typeof n.noteHtml === "string" && n.noteHtml !== null) return stripHtmlToText(n.noteHtml);
+      if (typeof n.note === "string") return n.note;
+      return "";
+    })();
+    const contentHit = (text || "").toLowerCase().includes(query);
 
-    // 동기화 제어
-    let unsubscribe = null;
-    let isApplyingRemote = false;
-    let lastVersion = 0;
-    let saveTimer = null;
-
-    function genId(){
-      return "id_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,8);
-    }
-    function blankTree(){
-      return { id:"root", label:"ROOT", children:[] };
-    }
-
-    function loadLocal(){
-      try{
-        const s = localStorage.getItem(LS_KEY);
-        if(!s) return (tree = blankTree());
-        const parsed = JSON.parse(s);
-        if(parsed && parsed.id && Array.isArray(parsed.children)) tree = parsed;
-        else tree = blankTree();
-      }catch{
-        tree = blankTree();
-      }
-    }
-    function saveLocal(){
-      try{ localStorage.setItem(LS_KEY, JSON.stringify(tree)); }catch{}
-    }
-
-    function findNodeById(node, id){
-      if(!node) return null;
-      if(node.id === id) return node;
-      const ch = node.children || [];
-      for(const c of ch){
-        const found = findNodeById(c, id);
-        if(found) return found;
-      }
-      return null;
-    }
-    function findParentId(root, targetId, parentId=null){
-      if(root.id === targetId) return parentId;
-      const ch = root.children || [];
-      for(const c of ch){
-        const found = findParentId(c, targetId, root.id);
-        if(found !== null && found !== undefined) return found;
-      }
-      return null;
-    }
-    function getCurrentParentNode(){
-      const node = findNodeById(tree, currentParentId);
-      if(!node){ currentParentId = "root"; return tree; }
-      return node;
-    }
-
-    function sheetDocRef(){
-      // ✅ 버튼 트리 전용 문서
-      return doc(db, "users", uid, "buttonTree", "default");
-    }
-
-    function scheduleSave(){
-      if(!uid) { saveLocal(); return; }
-      if(isApplyingRemote) return;
-
-      setStatus("저장 대기…");
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveNow, 300);
-    }
-
-    async function saveNow(){
-      if(!uid) return;
-      const ref = sheetDocRef();
-      const version = Date.now();
-      lastVersion = Math.max(lastVersion, version);
-
-      saveLocal();
-
-      try{
-        setStatus("저장 중…");
-        await setDoc(ref, {
-          version,
-          updatedAt: serverTimestamp(),
-          updatedBy: uid,
-          tree
-        }, { merge:true });
-        setStatus("저장 완료");
-      }catch(e){
-        console.error(e);
-        setStatus("저장 실패(F12 Console 확인)");
-      }
-    }
-
-    async function ensureDocExists(){
-      const ref = sheetDocRef();
-      const snap = await getDoc(ref);
-
-      if(!snap.exists()){
-        const version = Date.now();
-        lastVersion = version;
-        await setDoc(ref, {
-          version,
-          updatedAt: serverTimestamp(),
-          updatedBy: uid,
-          tree
-        }, { merge:true });
-        return tree;
-      }
-
-      const remote = snap.data();
-      lastVersion = remote?.version || 0;
-      const remoteTree = remote?.tree;
-      return (remoteTree && remoteTree.id && Array.isArray(remoteTree.children)) ? remoteTree : tree;
-    }
-
-    function startRealtime(){
-      const ref = sheetDocRef();
-      unsubscribe = onSnapshot(ref, (snap)=>{
-        if(!snap.exists()) return;
-        const remote = snap.data() || {};
-        const remoteVersion = remote.version || 0;
-
-        if(remoteVersion > lastVersion && remote.tree && remote.tree.id && Array.isArray(remote.tree.children)){
-          lastVersion = remoteVersion;
-          isApplyingRemote = true;
-          try{
-            setStatus("원격 변경 적용 중…");
-            tree = remote.tree;
-            saveLocal();
-            // 현재 위치가 사라졌으면 root로
-            if(currentParentId !== "root" && !findNodeById(tree, currentParentId)) currentParentId = "root";
-            render();
-            setStatus("동기화 완료");
-          } finally {
-            isApplyingRemote = false;
-          }
-        } else {
-          setStatus("최신 상태");
-        }
-      }, (err)=>{
-        console.warn(err);
-        setStatus("실시간 동기화 오류(F12 Console 확인)");
+    if (n.id !== "root" && (buttonHit || contentHit)) {
+      const matchType = buttonHit && contentHit ? "버튼+내용" : (buttonHit ? "버튼" : "내용");
+      all.push({
+        id: n.id,
+        label,
+        pathLabels: nextPath,
+        matchType,
+        score: (buttonHit?2:0) + (contentHit?1:0) + (label.toLowerCase().startsWith(query)?2:0)
       });
     }
 
-    // ---- UI 렌더 ----
-    function updateBreadcrumb(){
-      if(currentParentId === "root"){ bcEl.textContent = "위치: ROOT"; return; }
+    for (const c of (n.children||[])) walk(c, nextPath);
+  }
+  walk(state.tree, []);
 
-      const path = [];
-      function dfs(node, targetId){
-        path.push(node);
-        if(node.id === targetId) return true;
-        for(const c of (node.children||[])){
-          if(dfs(c, targetId)) return true;
-        }
-        path.pop();
-        return false;
-      }
-      dfs(tree, currentParentId);
-      bcEl.textContent = "위치: " + path.map(n=>n.label).join(" > ");
-    }
+  all.sort((a,b) => b.score - a.score);
+  showSearchDropdown(all);
+}
 
-    function moveSibling(parentNode, index, delta){
-      const arr = parentNode.children || [];
-      const ni = index + delta;
-      if(ni < 0 || ni >= arr.length) return;
-      const tmp = arr[index];
-      arr[index] = arr[ni];
-      arr[ni] = tmp;
-      scheduleSave();
-      render();
-    }
+/* ===== UI ===== */
+function computeMainButtonPxFromCurrentVisible(){
+  const wrap = $("leftScrollWrap");
+  const split = $("split");
+  const pad = parseFloat(getComputedStyle(split).getPropertyValue("--panePad")) || 0;
+  const visible = Math.max(160, Math.floor(wrap.clientWidth - pad * 2));
+  const pct = Math.max(10, Math.min(160, Number(state.ui.buttonWidthPct || 15)));
+  return Math.max(60, Math.floor(visible * (pct / 100)));
+}
+function ensureMainButtonPx(){
+  if (typeof state.ui.mainButtonPx === "number" && state.ui.mainButtonPx > 0) return;
+  state.ui.mainButtonPx = computeMainButtonPxFromCurrentVisible();
+}
 
-    function renderButtons(){
-      container.innerHTML = "";
+function syncModeButtons(){
+  $("btnEditMode").classList.toggle("active", !!state.ui.editMode);
+  $("btnBackupMode").classList.toggle("active", !!state.ui.backupMode);
+  $("btnSearchMode").classList.toggle("active", !!state.ui.searchMode);
 
-      const parent = getCurrentParentNode();
-      const children = parent.children || [];
+  $("editPanel").classList.toggle("show", !!state.ui.editMode);
 
-      if(children.length === 0){
-        const div = document.createElement("div");
-        div.className = "empty";
-        div.textContent = "이 위치에는 버튼이 없습니다. 위의 “+ 이 위치에 새 버튼”으로 추가하세요.";
-        container.appendChild(div);
-        return;
-      }
+  $("btnWidthRange").value = String(state.ui.buttonWidthPct);
+  $("btnWidthVal").textContent = String(state.ui.buttonWidthPct);
 
-      children.forEach((child, index)=>{
-        const row = document.createElement("div");
-        row.className = "btn-row";
+  $("searchBox").classList.toggle("show", !!state.ui.searchMode);
+}
 
-        const main = document.createElement("button");
-        main.className = "btn-main";
-        main.textContent = child.label;
+function renderButtons(){
+  ensureMainButtonPx();
+  const container = $("buttonContainer");
+  container.innerHTML = "";
 
-        main.onclick = ()=>{
-          if(child.children && child.children.length > 0){
-            currentParentId = child.id;
-            render();
-          } else {
-            // leaf 버튼 클릭 시 동작(원하면 나중에 “기록”으로 바꿔줄 수 있음)
-            setStatus("하위 없음(리프 버튼)");
-          }
-        };
+  const parent = getCurrentParentNode();
+  const children = parent.children || [];
 
-        const ctr = document.createElement("div");
-        ctr.className = "btn-controls";
+  if (children.length === 0) {
+    const div = document.createElement("div");
+    div.className="empty-text";
+    div.textContent="이 위치에는 버튼이 없습니다.\n상단의 '+ 새버튼'으로 추가하세요.";
+    container.appendChild(div);
+    return;
+  }
 
-        const up = document.createElement("button");
-        up.textContent = "↑";
-        up.title = "위로";
-        up.onclick = ()=> moveSibling(parent, index, -1);
+  const mainPx = state.ui.mainButtonPx;
 
-        const down = document.createElement("button");
-        down.textContent = "↓";
-        down.title = "아래로";
-        down.onclick = ()=> moveSibling(parent, index, 1);
+  children.forEach((child) => {
+    const row = document.createElement("div");
+    row.className="btn-row";
 
-        const addChild = document.createElement("button");
-        addChild.textContent = "+하위";
-        addChild.title = "하위 버튼 추가";
-        addChild.onclick = ()=>{
-          const name = prompt("하위 버튼 이름:");
-          if(!name || !name.trim()) return;
-          child.children = child.children || [];
-          child.children.push({ id: genId(), label: name.trim(), children: [] });
-          scheduleSave();
-          render();
-        };
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "btn-main" + (selectedNodeId === child.id ? " active" : "");
+    main.textContent = child.label;
+    main.style.width = mainPx + "px";
 
-        const rename = document.createElement("button");
-        rename.textContent = "이름";
-        rename.title = "이름 변경";
-        rename.onclick = ()=>{
-          const name = prompt("새 이름:", child.label);
-          if(!name || !name.trim()) return;
-          child.label = name.trim();
-          scheduleSave();
-          render();
-        };
-
-        const del = document.createElement("button");
-        del.textContent = "삭제";
-        del.title = "삭제";
-        del.onclick = ()=>{
-          if(!confirm(`'${child.label}' 삭제할까요? (하위도 함께 삭제)`)) return;
-          parent.children.splice(index, 1);
-          scheduleSave();
-          render();
-        };
-
-        ctr.append(up, down, addChild, rename, del);
-        row.append(main, ctr);
-        container.appendChild(row);
-      });
-    }
-
-    function render(){
-      updateBreadcrumb();
-      renderButtons();
-      btnAddHere.disabled = !uid;   // 로그인해야 “동기화 기반”으로 추가 가능 (원하면 로그인 없이도 가능하게 바꿔줌)
-      btnNewRoot.disabled = !uid;
-    }
-
-    // ---- 이벤트 ----
-    btnUp.onclick = ()=>{
-      if(currentParentId === "root") return;
-      currentParentId = findParentId(tree, currentParentId, null) || "root";
+    main.onclick = () => {
+      selectedNodeId = child.id;
+      if (child.children && child.children.length > 0) currentParentId = child.id;
       render();
     };
-    btnRoot.onclick = ()=>{
-      currentParentId = "root";
-      render();
-    };
-    btnAddHere.onclick = ()=>{
-      const parent = getCurrentParentNode();
-      const name = prompt("새 버튼 이름:");
-      if(!name || !name.trim()) return;
-      parent.children = parent.children || [];
-      parent.children.push({ id: genId(), label: name.trim(), children: [] });
-      scheduleSave();
-      render();
-    };
-    btnNewRoot.onclick = async ()=>{
-      if(!confirm("정말 ROOT를 초기화할까요? (클라우드 데이터도 초기화)")) return;
-      tree = blankTree();
-      currentParentId = "root";
-      saveLocal();
-      render();
-      await saveNow();
+
+    const controls = document.createElement("div");
+    controls.className="btn-controls";
+
+    const addChildBtn = document.createElement("button");
+    addChildBtn.type="button";
+    addChildBtn.textContent="+하위";
+    addChildBtn.onclick = async () => {
+      const name = prompt("하위 버튼 이름:");
+      if (!name || !name.trim()) return;
+      if (!child.children) child.children = [];
+      child.children.push({ id: genId(), label: name.trim(), note:"", noteHtml:null, children:[] });
+      await persistState(); render();
     };
 
-    btnLogin.onclick = async ()=>{
-      try{
-        setStatus("로그인 시도…");
-        await signInWithPopup(auth, provider);
-      }catch(e){
-        console.error(e);
-        const code = String(e?.code || "");
-        if(code.includes("unauthorized-domain")) setStatus("도메인 미승인(github.io 등을 승인 필요)");
-        else if(code.includes("popup-blocked")) setStatus("팝업 차단됨(팝업 허용 필요)");
-        else setStatus("로그인 실패(F12 Console 확인)");
-      }
-    };
-    btnLogout.onclick = async ()=>{
-      try{ await signOut(auth); }catch(e){ console.error(e); }
+    const renameBtn = document.createElement("button");
+    renameBtn.type="button";
+    renameBtn.textContent="이름";
+    renameBtn.onclick = async () => {
+      const n = prompt("새 이름:", child.label);
+      if (!n || !n.trim()) return;
+      child.label = n.trim();
+      await persistState(); render();
     };
 
-    // ---- 시작 ----
-    loadLocal();
+    const delBtn = document.createElement("button");
+    delBtn.type="button";
+    delBtn.textContent="삭제";
+    delBtn.onclick = async () => {
+      if (!confirm("'" + child.label + "' 버튼을 삭제할까요? (하위도 함께 삭제)")) return;
+      const par = findParentNode(state.tree, child.id);
+      if (par) par.children = par.children.filter(x => x.id !== child.id);
+      if (selectedNodeId === child.id) selectedNodeId = "root";
+      await persistState(); render();
+    };
+
+    controls.append(addChildBtn, renameBtn, delBtn);
+    row.appendChild(main);
+    row.appendChild(controls);
+    container.appendChild(row);
+  });
+}
+
+function renderNotePanel(){
+  const node = findNodeById(state.tree, selectedNodeId) || state.tree;
+  selectedNodeId = node.id;
+
+  $("noteForLabel").textContent = "선택: " + (node.id==="root" ? "전체" : node.label);
+  $("notePathLabel").textContent = getPathToId(node.id).map(n => (n.id==="root"?"전체":n.label)).join(" > ");
+
+  const html = (typeof node.noteHtml === "string" && node.noteHtml !== null)
+    ? node.noteHtml
+    : (node.note || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>");
+
+  const isEmpty = stripHtmlToText(html).trim().length === 0;
+
+  if (!noteEditMode) {
+    $("noteView").style.display = "block";
+    $("editorWrap").style.display = "none";
+    $("noteView").innerHTML = isEmpty ? `<div class="note-empty">내용이 비어있습니다. [수정]을 눌러 작성하세요.</div>` : html;
+  } else {
+    $("noteView").style.display = "none";
+    $("editorWrap").style.display = "block";
+    $("noteEditor").innerHTML = html;
+  }
+
+  $("btnNoteEdit").style.display = noteEditMode ? "none" : "inline-block";
+  $("btnNoteSave").style.display = noteEditMode ? "inline-block" : "none";
+  $("btnNoteCancel").style.display = noteEditMode ? "inline-block" : "none";
+}
+
+function render(){
+  migrateRootLabel(state.tree);
+  if (currentParentId !== "root" && !findNodeById(state.tree, currentParentId)) currentParentId = "root";
+  if (selectedNodeId !== "root" && !findNodeById(state.tree, selectedNodeId)) selectedNodeId = "root";
+
+  syncModeButtons();
+  renderBreadcrumbButtons();
+  renderButtons();
+  renderNotePanel();
+}
+
+/* ===== 이벤트 연결 (여기서부터가 핵심) ===== */
+function bindEvents(){
+  onClick("btnStatsMode", () => openStatsModal());
+  onClick("statsClose", () => closeStatsModal());
+  $("statsModal").addEventListener("click", (e) => { if (e.target.id === "statsModal") closeStatsModal(); });
+
+  onClick("btnSearchMode", async () => { setSearchMode(!state.ui.searchMode); await persistState(); });
+  onClick("btnSearchClose", async () => { setSearchMode(false); await persistState(); });
+  onClick("btnSearchClear", () => { $("searchInput").value=""; hideSearchDropdown(); $("searchCountPill").textContent="검색: 0"; $("searchInput").focus(); });
+  onInput("searchInput", (e) => runSearch(e.target.value));
+
+  document.addEventListener("click", (e) => {
+    const box = $("searchBox");
+    const dd = $("searchDropdown");
+    if (dd.classList.contains("show") && box && !box.contains(e.target)) hideSearchDropdown();
+  });
+
+  onClick("btnUp", () => {
+    if (currentParentId === "root") return;
+    const parent = findParentNode(state.tree, currentParentId);
+    currentParentId = parent ? parent.id : "root";
+    selectedNodeId = currentParentId;
     render();
-    setStatus("로그인하면 동기화 시작");
+  });
+  onClick("btnAll", () => { currentParentId = "root"; selectedNodeId = "root"; render(); });
 
-    onAuthStateChanged(auth, async (user)=>{
-      if(unsubscribe){ unsubscribe(); unsubscribe = null; }
+  onClick("btnAddHere", async () => {
+    const parent = getCurrentParentNode();
+    const name = prompt("새 버튼 이름:");
+    if (!name || !name.trim()) return;
+    parent.children.push({ id: genId(), label: name.trim(), note:"", noteHtml:null, children:[] });
+    await persistState(); render();
+  });
 
-      if(!user){
-        uid = null;
-        whoEl.textContent = "로그인 필요";
-        btnLogin.disabled = false;
-        btnLogout.disabled = true;
-        btnAddHere.disabled = true;
-        btnNewRoot.disabled = true;
-        setStatus("로그인하면 동기화 시작");
-        return;
-      }
+  onClick("btnEditMode", async () => { state.ui.editMode = !state.ui.editMode; syncModeButtons(); await persistState(); });
+  onClick("btnBackupMode", async () => { state.ui.backupMode = !state.ui.backupMode; syncModeButtons(); await persistState(); });
 
-      uid = user.uid;
-      whoEl.textContent = `로그인됨: ${user.email || user.displayName || uid}`;
-      btnLogin.disabled = true;
-      btnLogout.disabled = false;
+  $("btnWidthRange").addEventListener("input", async (e) => {
+    const v = Number(e.target.value || 15);
+    state.ui.buttonWidthPct = v;
+    $("btnWidthVal").textContent = String(v);
+    state.ui.mainButtonPx = computeMainButtonPxFromCurrentVisible();
+    await persistState();
+    renderButtons();
+  });
 
-      try{
-        setStatus("데이터 로딩…");
-        // 로컬 트리 → 클라우드 우선으로 맞춤
-        const remoteTree = await ensureDocExists();
-        tree = remoteTree;
-        saveLocal();
-        render();
-        setStatus("동기화 시작");
-        startRealtime();
-      }catch(e){
-        console.error(e);
-        setStatus("동기화 오류(F12 Console 확인)");
-      }
-    });
-  </script>
+  onClick("btnNoteEdit", () => { noteEditMode = true; renderNotePanel(); setTimeout(()=>$("noteEditor").focus(),0); });
+  onClick("btnNoteCancel", () => { noteEditMode = false; renderNotePanel(); });
+  onClick("btnNoteSave", async () => {
+    const node = findNodeById(state.tree, selectedNodeId) || state.tree;
+    node.noteHtml = $("noteEditor").innerHTML ?? "";
+    node.note = $("noteEditor").innerText ?? "";
+    await persistState();
+    noteEditMode = false;
+    renderNotePanel();
+  });
+
+  // ✅ 검색/통계 버튼이 눌렸을 때 “반응 없음” 방지용 테스트 로그
+  console.log("[OK] 이벤트 바인딩 완료");
+}
+
+(async function init(){
+  try {
+    await loadState();
+    ensureNodeFields(state.tree);
+    migrateRootLabel(state.tree);
+
+    // 초기 버튼폭 px 계산
+    state.ui.mainButtonPx = computeMainButtonPxFromCurrentVisible();
+    await persistState();
+
+    bindEvents();
+    render();
+    if (state.ui.searchMode) setSearchMode(true);
+
+    console.log("[OK] init 완료");
+  } catch (err) {
+    console.error(err);
+    alert("초기화 중 오류가 발생했습니다. 콘솔(F12)을 확인해주세요.");
+  }
+})();
+</script>
 </body>
 </html>
