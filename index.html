@@ -124,11 +124,12 @@
       flex: 1; display:flex; min-height: 0;
       border:1px solid #eee; border-radius:14px; overflow:hidden; background:#fff;
       min-width:0;
+      position: relative;
     }
     .pane{
       min-height: 0;
       min-width: 0;
-      overflow: hidden;
+      overflow: hidden; /* ✅ 폭이 줄면 내용은 가려질 수 있음 */
       padding: 0;
       background:#fff;
       display:flex;
@@ -139,6 +140,8 @@
       border-left: 1px solid #e6e6e6; border-right: 1px solid #e6e6e6;
       cursor: col-resize; position: relative;
       flex: 0 0 auto;
+      user-select:none;
+      touch-action:none; /* ✅ 모바일/트랙패드 드래그 안정 */
     }
     .divider::after{
       content:""; position:absolute; top: 50%; left: 50%;
@@ -148,8 +151,9 @@
       opacity: .9;
     }
 
-    #leftPane { width:50%; min-width:0; }
-    #rightPane{ width:50%; min-width:0; background:#fff; }
+    /* ✅ 기본은 반반이지만, 드래그 시 inline style로 px 고정 */
+    #leftPane { width:50%; min-width:0; flex: 0 0 auto; }
+    #rightPane{ width:auto; min-width:0; background:#fff; flex: 1 1 auto; }
 
     .scrollWrap{
       flex: 1;
@@ -225,19 +229,6 @@
       width: max-content;
       min-width: 100%;
     }
-
-    .pickcursor{
-      width: 18px; height: 18px; border-radius: 999px;
-      border: 2px solid #bbb; background:#fff; flex:0 0 auto;
-      display:none; position:relative; cursor:pointer;
-      margin-top: 10px;
-      margin-right: 6px;
-      flex-shrink: 0;
-    }
-    .pickcursor.show{ display:inline-block; }
-    .pickcursor.selected{ border-color:#3b82f6; }
-    .pickcursor.selected::after{ content:""; position:absolute; inset:3px; border-radius:999px; background:#3b82f6; }
-    .pickcursor.disabled{ border-color:#cfcfcf; cursor:not-allowed; opacity:.6; }
 
     .btn-main{
       flex: 0 0 auto;
@@ -612,15 +603,16 @@ const PERSIST = {
 
 /* ✅ 최초 기본값 15% */
 let state = {
-  version: 12,
+  version: 13,
   updatedAt: 0,
   ui: {
-    splitLeftPx: null,
+    splitLeftPx: null,     // ✅ 분할선 드래그 저장
     buttonWidthPct: 15,
-    mainButtonPx: null,
+    mainButtonPx: null,    // ✅ 버튼 실제 px (드래그로는 절대 바뀌지 않음)
     editMode: false,
     backupMode: false,
     searchMode: false,
+    moveMode: false,       // ✅ 이동모드
   },
   tree: { id:"root", label:"전체", note:"", noteHtml:null, children:[] },
 };
@@ -628,6 +620,12 @@ let state = {
 let currentParentId = "root";
 let selectedNodeId = "root";
 let noteEditMode = false;
+
+/* ✅ 이동모드 상태 */
+let moveState = {
+  sourceId: null,
+  targetId: null,
+};
 
 /* ===== IndexedDB ===== */
 function idbOpen() {
@@ -730,6 +728,22 @@ function getPathToId(targetId){
   return path.length ? path : [state.tree];
 }
 function getPathToCurrent(){ return (currentParentId==="root") ? [state.tree] : getPathToId(currentParentId); }
+
+/* ✅ source subtree(자기+하위)인지 체크 */
+function isDescendantOrSelf(sourceId, maybeChildId){
+  if (sourceId === maybeChildId) return true;
+  const src = findNodeById(state.tree, sourceId);
+  if (!src) return false;
+  let hit = false;
+  (function walk(n){
+    if (hit) return;
+    for (const c of (n.children||[])){
+      if (c.id === maybeChildId){ hit = true; return; }
+      walk(c);
+    }
+  })(src);
+  return hit;
+}
 
 function flattenTreeWithPaths(){
   const out = [];
@@ -904,6 +918,169 @@ function runSearch(q){
   showSearchDropdown(all);
 }
 
+/* ===========================
+   ✅ 이동모드 UI/기능
+   =========================== */
+function setMoveMode(on){
+  state.ui.moveMode = !!on;
+  $("btnMoveMode").classList.toggle("active", state.ui.moveMode);
+  $("moveBox").classList.toggle("show", state.ui.moveMode);
+
+  if (state.ui.moveMode){
+    // 출발은 "현재 선택된 버튼" (root면 이동 불가로 표시)
+    moveState.sourceId = (selectedNodeId && selectedNodeId !== "root") ? selectedNodeId : null;
+    moveState.targetId = null;
+    updateMovePills();
+    $("btnMoveConfirm").disabled = true;
+    $("moveSearchInput").value = "";
+    hideMoveDropdown();
+    setTimeout(()=>$("moveSearchInput")?.focus(), 0);
+  } else {
+    moveState.sourceId = null;
+    moveState.targetId = null;
+    updateMovePills();
+    $("btnMoveConfirm").disabled = true;
+    $("moveSearchInput").value = "";
+    hideMoveDropdown();
+  }
+}
+function updateMovePills(){
+  const src = moveState.sourceId ? findNodeById(state.tree, moveState.sourceId) : null;
+  const tgt = moveState.targetId ? findNodeById(state.tree, moveState.targetId) : null;
+
+  $("movePillSource").textContent = "출발: " + (src ? src.label : (selectedNodeId==="root" ? "전체(불가)" : "-"));
+  $("movePillTarget").textContent = "대상: " + (tgt ? tgt.label : "-");
+
+  // confirm enable 조건: source/target 모두 있고, root 아님, 자기/하위 이동 아님
+  const ok = !!src && !!tgt && tgt.id !== "root" && !isDescendantOrSelf(src.id, tgt.id);
+  $("btnMoveConfirm").disabled = !ok;
+}
+function hideMoveDropdown(){
+  const dd = $("moveDropdown");
+  dd.classList.remove("show");
+  dd.innerHTML = "";
+}
+function showMoveDropdown(results){
+  const dd = $("moveDropdown");
+  dd.innerHTML = "";
+
+  if (!results.length){
+    const div = document.createElement("div");
+    div.className = "empty-text";
+    div.textContent = "대상 검색 결과가 없습니다.";
+    dd.appendChild(div);
+    dd.classList.add("show");
+    return;
+  }
+
+  results.slice(0, 300).forEach(r => {
+    const row = document.createElement("div");
+    row.className = "res-item" + (r.disabled ? " disabled" : "");
+
+    const title = document.createElement("div");
+    title.className="res-title";
+    title.textContent = r.label;
+
+    const tag = document.createElement("span");
+    tag.className="res-tag";
+    tag.textContent = r.tag;
+
+    const path = document.createElement("div");
+    path.className="res-path";
+    path.textContent = r.pathLabels.join(" > ");
+
+    row.appendChild(title);
+    row.appendChild(tag);
+    row.appendChild(path);
+
+    if (!r.disabled){
+      row.onclick = () => {
+        moveState.targetId = r.id;
+        updateMovePills();
+        hideMoveDropdown();
+      };
+    }
+
+    dd.appendChild(row);
+  });
+
+  dd.classList.add("show");
+}
+function runMoveTargetSearch(q){
+  const query = (q || "").trim().toLowerCase();
+  if (!query){ hideMoveDropdown(); return; }
+
+  const srcId = moveState.sourceId;
+  const all = flattenTreeWithPaths();
+
+  const results = [];
+  for (const item of all){
+    if (item.id === "root") continue; // ✅ "다른 버튼의 하위" 요구 → root 대상 제외
+    const labelHit = (item.label || "").toLowerCase().includes(query);
+    const pathHit  = item.pathLabels.join(">").toLowerCase().includes(query);
+
+    if (!labelHit && !pathHit) continue;
+
+    let disabled = false;
+    let tag = "대상";
+    if (!srcId){
+      disabled = true;
+      tag = "출발없음";
+    } else if (item.id === srcId){
+      disabled = true;
+      tag = "자기자신";
+    } else if (isDescendantOrSelf(srcId, item.id)){
+      disabled = true;
+      tag = "하위불가";
+    }
+
+    results.push({
+      ...item,
+      disabled,
+      tag,
+      score: (labelHit?2:0) + (pathHit?1:0) + (item.label.toLowerCase().startsWith(query)?2:0)
+    });
+  }
+
+  results.sort((a,b)=> b.score - a.score);
+  showMoveDropdown(results);
+}
+async function executeMove(){
+  const srcId = moveState.sourceId;
+  const tgtId = moveState.targetId;
+  if (!srcId || !tgtId) return;
+
+  const src = findNodeById(state.tree, srcId);
+  const tgt = findNodeById(state.tree, tgtId);
+  if (!src || !tgt) return;
+
+  if (tgt.id === "root") { alert("대상은 '전체'가 될 수 없습니다."); return; }
+  if (isDescendantOrSelf(src.id, tgt.id)) { alert("자기 자신/자기 하위로는 이동할 수 없습니다."); return; }
+
+  const srcParent = findParentNode(state.tree, srcId);
+  if (!srcParent){ alert("출발 버튼의 상위를 찾지 못했습니다."); return; }
+
+  // ✅ 제거
+  srcParent.children = (srcParent.children||[]).filter(x => x.id !== srcId);
+
+  // ✅ 붙이기
+  if (!Array.isArray(tgt.children)) tgt.children = [];
+  tgt.children.push(src);
+
+  await persistState();
+
+  // ✅ 이동 후: 대상으로 들어가서 확인하기
+  currentParentId = tgt.id;
+  selectedNodeId = src.id;
+
+  // UI reset
+  moveState.targetId = null;
+  $("moveSearchInput").value = "";
+  updateMovePills();
+
+  render();
+}
+
 /* ===== UI ===== */
 function computeMainButtonPxFromCurrentVisible(){
   const wrap = $("leftScrollWrap");
@@ -922,6 +1099,7 @@ function syncModeButtons(){
   $("btnEditMode").classList.toggle("active", !!state.ui.editMode);
   $("btnBackupMode").classList.toggle("active", !!state.ui.backupMode);
   $("btnSearchMode").classList.toggle("active", !!state.ui.searchMode);
+  $("btnMoveMode").classList.toggle("active", !!state.ui.moveMode);
 
   $("editPanel").classList.toggle("show", !!state.ui.editMode);
 
@@ -929,6 +1107,7 @@ function syncModeButtons(){
   $("btnWidthVal").textContent = String(state.ui.buttonWidthPct);
 
   $("searchBox").classList.toggle("show", !!state.ui.searchMode);
+  $("moveBox").classList.toggle("show", !!state.ui.moveMode);
 }
 
 function renderButtons(){
@@ -957,11 +1136,19 @@ function renderButtons(){
     main.type = "button";
     main.className = "btn-main" + (selectedNodeId === child.id ? " active" : "");
     main.textContent = child.label;
-    main.style.width = mainPx + "px";
+    main.style.width = mainPx + "px"; // ✅ 분할선 드래그로는 절대 바뀌지 않음
 
     main.onclick = () => {
       selectedNodeId = child.id;
       if (child.children && child.children.length > 0) currentParentId = child.id;
+      // 이동모드 켜져있으면 출발도 즉시 갱신 (요청 흐름에 자연스럽게)
+      if (state.ui.moveMode){
+        moveState.sourceId = (selectedNodeId !== "root") ? selectedNodeId : null;
+        moveState.targetId = null;
+        $("moveSearchInput").value = "";
+        hideMoveDropdown();
+        updateMovePills();
+      }
       render();
     };
 
@@ -997,6 +1184,10 @@ function renderButtons(){
       const par = findParentNode(state.tree, child.id);
       if (par) par.children = par.children.filter(x => x.id !== child.id);
       if (selectedNodeId === child.id) selectedNodeId = "root";
+      // 이동모드 출발이 삭제되었으면 정리
+      if (moveState.sourceId === child.id) moveState.sourceId = null;
+      if (moveState.targetId === child.id) moveState.targetId = null;
+      updateMovePills();
       await persistState(); render();
     };
 
@@ -1035,6 +1226,28 @@ function renderNotePanel(){
   $("btnNoteCancel").style.display = noteEditMode ? "inline-block" : "none";
 }
 
+function applySplitFromState(){
+  const split = $("split");
+  const left = $("leftPane");
+  const divider = $("divider");
+  if (!split || !left || !divider) return;
+
+  // 저장값이 있으면 적용(없으면 기본 50%)
+  if (typeof state.ui.splitLeftPx === "number" && state.ui.splitLeftPx >= 0){
+    const total = split.clientWidth;
+    const divW = divider.offsetWidth || 8;
+    const maxLeft = Math.max(0, total - divW); // right가 0px도 가능
+    const leftPx = Math.max(0, Math.min(maxLeft, state.ui.splitLeftPx));
+    left.style.width = leftPx + "px";
+    left.style.flex = "0 0 auto";
+    // right는 flex:1 유지
+  } else {
+    left.style.width = "50%";
+    left.style.flex = "0 0 auto";
+  }
+}
+
+/* ===== 전체 렌더 ===== */
 function render(){
   migrateRootLabel(state.tree);
   if (currentParentId !== "root" && !findNodeById(state.tree, currentParentId)) currentParentId = "root";
@@ -1044,9 +1257,77 @@ function render(){
   renderBreadcrumbButtons();
   renderButtons();
   renderNotePanel();
+
+  // ✅ 분할폭 상태 반영 (렌더 때마다 적용해도 안전)
+  applySplitFromState();
+  // ✅ 이동모드 pills 업데이트
+  if (state.ui.moveMode) updateMovePills();
 }
 
-/* ===== 이벤트 연결 (여기서부터가 핵심) ===== */
+/* ===========================
+   ✅ 분할선 드래그(요구사항 1)
+   - 드래그로 pane 폭만 바뀌고
+   - 내부 버튼/개체 크기는 절대 재계산하지 않음
+   - 0px까지 허용(완전 가리기 가능)
+   =========================== */
+function bindSplitDrag(){
+  const split = $("split");
+  const left = $("leftPane");
+  const divider = $("divider");
+  if (!split || !left || !divider) return;
+
+  let dragging = false;
+
+  function setLeftWidthByClientX(clientX){
+    const rect = split.getBoundingClientRect();
+    const divW = divider.offsetWidth || 8;
+    const total = rect.width;
+
+    // leftPx = clientX - rect.left
+    let leftPx = clientX - rect.left;
+
+    // ✅ 완전 숨김(0) 허용, right도 0 허용 => left 최대는 total - divW
+    const maxLeft = Math.max(0, total - divW);
+    leftPx = Math.max(0, Math.min(maxLeft, leftPx));
+
+    left.style.width = leftPx + "px";
+    left.style.flex = "0 0 auto";
+
+    state.ui.splitLeftPx = leftPx;
+  }
+
+  divider.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    divider.setPointerCapture(e.pointerId);
+    divider.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    setLeftWidthByClientX(e.clientX);
+  });
+
+  divider.addEventListener("pointermove", async (e) => {
+    if (!dragging) return;
+    setLeftWidthByClientX(e.clientX);
+    // ✅ 드래그 중에는 버튼폭(mainButtonPx) 재계산 금지
+  });
+
+  async function endDrag(e){
+    if (!dragging) return;
+    dragging = false;
+    try { divider.releasePointerCapture(e.pointerId); } catch {}
+    document.body.style.userSelect = "";
+    await persistState();
+  }
+
+  divider.addEventListener("pointerup", endDrag);
+  divider.addEventListener("pointercancel", endDrag);
+
+  // ✅ 창 크기 바뀌어도 저장된 leftPx를 최대치 내에서 유지
+  window.addEventListener("resize", () => {
+    applySplitFromState();
+  });
+}
+
+/* ===== 이벤트 연결 ===== */
 function bindEvents(){
   onClick("btnStatsMode", () => openStatsModal());
   onClick("statsClose", () => closeStatsModal());
@@ -1058,9 +1339,13 @@ function bindEvents(){
   onInput("searchInput", (e) => runSearch(e.target.value));
 
   document.addEventListener("click", (e) => {
-    const box = $("searchBox");
-    const dd = $("searchDropdown");
-    if (dd.classList.contains("show") && box && !box.contains(e.target)) hideSearchDropdown();
+    const sbox = $("searchBox");
+    const sdd = $("searchDropdown");
+    if (sdd.classList.contains("show") && sbox && !sbox.contains(e.target)) hideSearchDropdown();
+
+    const mbox = $("moveBox");
+    const mdd = $("moveDropdown");
+    if (mdd.classList.contains("show") && mbox && !mbox.contains(e.target)) hideMoveDropdown();
   });
 
   onClick("btnUp", () => {
@@ -1068,9 +1353,25 @@ function bindEvents(){
     const parent = findParentNode(state.tree, currentParentId);
     currentParentId = parent ? parent.id : "root";
     selectedNodeId = currentParentId;
+    if (state.ui.moveMode){
+      moveState.sourceId = (selectedNodeId !== "root") ? selectedNodeId : null;
+      moveState.targetId = null;
+      $("moveSearchInput").value = "";
+      hideMoveDropdown();
+      updateMovePills();
+    }
     render();
   });
-  onClick("btnAll", () => { currentParentId = "root"; selectedNodeId = "root"; render(); });
+  onClick("btnAll", () => {
+    currentParentId = "root"; selectedNodeId = "root";
+    if (state.ui.moveMode){
+      moveState.sourceId = null; moveState.targetId = null;
+      $("moveSearchInput").value = "";
+      hideMoveDropdown();
+      updateMovePills();
+    }
+    render();
+  });
 
   onClick("btnAddHere", async () => {
     const parent = getCurrentParentNode();
@@ -1083,11 +1384,29 @@ function bindEvents(){
   onClick("btnEditMode", async () => { state.ui.editMode = !state.ui.editMode; syncModeButtons(); await persistState(); });
   onClick("btnBackupMode", async () => { state.ui.backupMode = !state.ui.backupMode; syncModeButtons(); await persistState(); });
 
+  /* ✅ 이동모드 버튼 -> 이동창 토글 (요구사항 2) */
+  onClick("btnMoveMode", async () => {
+    setMoveMode(!state.ui.moveMode);
+    await persistState();
+  });
+  onClick("btnMoveCancel", async () => {
+    setMoveMode(false);
+    await persistState();
+  });
+  onInput("moveSearchInput", (e) => runMoveTargetSearch(e.target.value));
+  onClick("btnMoveConfirm", async () => {
+    await executeMove();
+    await persistState();
+  });
+
   $("btnWidthRange").addEventListener("input", async (e) => {
     const v = Number(e.target.value || 15);
     state.ui.buttonWidthPct = v;
     $("btnWidthVal").textContent = String(v);
+
+    // ✅ 버튼폭은 "편집모드의 슬라이더"로만 바뀌게 유지
     state.ui.mainButtonPx = computeMainButtonPxFromCurrentVisible();
+
     await persistState();
     renderButtons();
   });
@@ -1103,7 +1422,6 @@ function bindEvents(){
     renderNotePanel();
   });
 
-  // ✅ 검색/통계 버튼이 눌렸을 때 “반응 없음” 방지용 테스트 로그
   console.log("[OK] 이벤트 바인딩 완료");
 }
 
@@ -1113,13 +1431,18 @@ function bindEvents(){
     ensureNodeFields(state.tree);
     migrateRootLabel(state.tree);
 
-    // 초기 버튼폭 px 계산
-    state.ui.mainButtonPx = computeMainButtonPxFromCurrentVisible();
-    await persistState();
+    // ✅ 초기 버튼폭 px 계산(없을 때만)
+    ensureMainButtonPx();
 
+    // ✅ 저장된 split 폭 적용
+    applySplitFromState();
+
+    bindSplitDrag();
     bindEvents();
     render();
+
     if (state.ui.searchMode) setSearchMode(true);
+    if (state.ui.moveMode) setMoveMode(true);
 
     console.log("[OK] init 완료");
   } catch (err) {
